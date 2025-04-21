@@ -13,9 +13,9 @@ Telegram‑бот для проведения турниров с использ
 
 ## Запуск локально
 ```bash
-git clone https://github.com/yourname/tg_game_bot.git
+git clone https://github.com/m0khm/dice-bot
 cd tg_game_bot
-cp .env.example .env            # вставьте токен
+cp .env.example .env            
 python -m venv venv && . venv/bin/activate
 pip install -r requirements.txt
 python -m bot.main
