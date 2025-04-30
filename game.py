@@ -2,8 +2,10 @@
 
 import random
 import time
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update            # ← добавили Update
+from telegram.ext import CallbackContext, ContextTypes                               # ← добавили ContextTypes
+async def roll_dice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+
 
 class TournamentManager:
     def __init__(self, job_queue):
