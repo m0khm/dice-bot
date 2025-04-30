@@ -1,5 +1,3 @@
-# bot.py
-
 import logging
 import os
 from dotenv import load_dotenv
@@ -18,36 +16,39 @@ from telegram.ext import (
 
 from game import TournamentManager
 
-# Логирование
+# ──────────── Логирование ────────────
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
+# ──────────── Токен ────────────
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise RuntimeError("BOT_TOKEN не задан в .env")
+    raise RuntimeError("BOT_TOKEN not set in .env")
 
+# Текст для /start и /help
 COMMANDS_TEXT = (
     "Привет! Я TournamentBot🎲\n\n"
-    "/start — показать информацию о боте\n"
+    "/start — показать это сообщение\n"
     "/help — список команд\n"
     "/game — (админ) начать сбор участников\n"
     "/game_start — (админ) запустить турнир\n"
     "/dice — бросить кубик во время хода\n"
 )
 
+# ──────────── Регистрация команд для подсказки `/` ────────────
 async def on_startup(app):
-    # Регистрируем команды, чтобы Telegram-клиент показывал их при вводе `/`
     await app.bot.set_my_commands([
         BotCommand("start",      "Показать информацию о боте"),
         BotCommand("help",       "Список команд"),
-        BotCommand("game",       "Начать сбор участников (админ)"),
-        BotCommand("game_start","Запустить турнир (админ)"),
-        BotCommand("dice",       "Бросить кубик во время хода"),
+        BotCommand("game",       "Начать сбор (админ)"),
+        BotCommand("game_start", "Запустить турнир (админ)"),
+        BotCommand("dice",       "Бросить кубик"),
     ])
 
+# ──────────── Хендлеры ────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
@@ -79,16 +80,16 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError as e:
         return await update.message.reply_text(str(e))
 
-    # 1) Bye
+    # bye-игроки
     for bye in byes:
         await context.bot.send_message(chat_id, f"🎉 {bye} сразу проходит в 2-й раунд (bye).")
 
-    # 2) Публикуем и закрепляем сетку
-    m = await context.bot.send_message(chat_id, text="Сетки турнира:\n" + pairs_list)
-    await context.bot.pin_chat_message(chat_id=chat_id, message_id=m.message_id)
+    # Сетка + закреп
+    m = await context.bot.send_message(chat_id, "Сетки турнира:\n" + pairs_list)
+    await context.bot.pin_chat_message(chat_id, m.message_id)
 
-    # 3) Приглашаем первую пару
-    await context.bot.send_message(chat_id, text=first_msg, reply_markup=kb)
+    # Первая пара
+    await context.bot.send_message(chat_id, first_msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await tournament.confirm_ready(update, context)
@@ -98,6 +99,7 @@ async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text:
         await update.message.reply_text(text)
 
+# ──────────── main ────────────
 def main():
     app = (
         ApplicationBuilder()
@@ -113,7 +115,7 @@ def main():
     app.add_handler(CommandHandler("game",       game))
     app.add_handler(CallbackQueryHandler(join_game_cb, pattern="^join_game$"))
     app.add_handler(CommandHandler("game_start", game_start))
-    app.add_handler(CallbackQueryHandler(ready_cb,  pattern="^ready_"))
+    app.add_handler(CallbackQueryHandler(ready_cb, pattern="^ready_"))
     app.add_handler(CommandHandler("dice",       dice))
 
     app.run_polling()
