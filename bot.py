@@ -1,18 +1,13 @@
-# bot.py
 
 import logging
 import os
 from dotenv import load_dotenv
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
-    ContextTypes,
     CallbackQueryHandler,
+    ContextTypes,
 )
 
 from game import TournamentManager
@@ -63,10 +58,10 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         byes, msg, kb = tournament.start_tournament(chat_id)
     except ValueError as e:
         return await update.message.reply_text(str(e))
-    # сообщаем о bye
+    # сообщаем о bye, если есть
     for bye in byes:
         await context.bot.send_message(chat_id, f"🎉 {bye} получает bye и сразу в следующий раунд!")
-    # первая пара
+    # запускаем первую пару
     await context.bot.send_message(chat_id, text=msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
