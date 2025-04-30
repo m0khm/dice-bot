@@ -74,7 +74,14 @@ async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"Участвуют: {lst}", reply_markup=q.message.reply_markup)
 
 async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Админ формирует сетку и запускает турнир."""
     chat_id = update.effective_chat.id
+
+    # ⬇️  проверяем права администратора
+    member = await context.bot.get_chat_member(chat_id, update.effective_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await update.message.reply_text("Только админ может запустить турнир.")
+
     try:
         byes, pairs_list, first_msg, kb = tournament.start_tournament(chat_id)
     except ValueError as e:
@@ -84,11 +91,11 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for bye in byes:
         await context.bot.send_message(chat_id, f"🎉 {bye} сразу проходит в 2-й раунд (bye).")
 
-    # Сетка + закреп
+    # сетка + закреп
     m = await context.bot.send_message(chat_id, "Сетки турнира:\n" + pairs_list)
     await context.bot.pin_chat_message(chat_id, m.message_id)
 
-    # Первая пара
+    # первая пара
     await context.bot.send_message(chat_id, first_msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
