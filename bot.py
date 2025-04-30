@@ -1,3 +1,5 @@
+# bot.py
+
 import logging
 import os
 from dotenv import load_dotenv
@@ -12,108 +14,72 @@ from telegram.ext import (
     ContextTypes,
     CallbackQueryHandler,
 )
+
 from game import TournamentManager
 
-# ——— Настройка логирования ———
+# Логирование
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# ——— Читаем токен и инициализируем менеджер ———
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise RuntimeError("Нужно указать BOT_TOKEN в .env")
-
-tournament = TournamentManager()
-
-# Список ID админов (дополнительно к настоящим администраторам чата)
-ALLOWED_IDS = {123456789, 987654321}  # <-- вставьте сюда свои Telegram ID
+    raise RuntimeError("BOT_TOKEN не задан в .env")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приветствие и справка."""
-    text = (
+    await update.effective_chat.send_message(
         "Привет! Я TournamentBot🎲\n\n"
         "Команды:\n"
         "/game — собрать участников (только админ)\n"
         "/game_start — запустить турнир (только админ)\n"
         "/dice — бросить кубик (во время хода)\n"
     )
-    await update.effective_chat.send_message(text=text)
 
 async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начать сбор участников (только админы)."""
     chat = update.effective_chat
     user = update.effective_user
-
-    # Проверка на админа чата или в ALLOWED_IDS
     member = await context.bot.get_chat_member(chat.id, user.id)
-    if not (member.status in ("administrator", "creator") or user.id in ALLOWED_IDS):
-        return await update.message.reply_text("❌ Только администратор может начать сбор участников.")
-
-    # Начинаем сбор
+    if member.status not in ("administrator", "creator"):
+        return await update.message.reply_text("Только админ может собрать участников.")
     tournament.begin_signup(chat.id)
     kb = InlineKeyboardMarkup.from_button(
         InlineKeyboardButton("Участвую", callback_data="join_game")
     )
-    await context.bot.send_message(
-        chat_id=chat.id,
-        text="📝 Набор на игру открыт! Нажмите «Участвую» чтобы записаться.",
-        reply_markup=kb,
-    )
+    await chat.send_message("Набор на игру! Нажмите «Участвую»", reply_markup=kb)
 
 async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка кнопки «Участвую»."""
-    query = update.callback_query
-    await query.answer()
-    user = query.from_user
-    added = tournament.add_player(query.message.chat.id, user)
-    if not added:
-        return  # уже записан или набор не идёт
-    txt = (
-        "📝 Набор на игру открыт! Участвуют:\n"
-        f"{tournament.list_players(query.message.chat.id)}"
-    )
-    await query.edit_message_text(text=txt, reply_markup=query.message.reply_markup)
+    q = update.callback_query
+    await q.answer()
+    added = tournament.add_player(q.message.chat.id, q.from_user)
+    if added:
+        lst = tournament.list_players(q.message.chat.id)
+        await q.edit_message_text(f"Участвуют: {lst}", reply_markup=q.message.reply_markup)
 
 async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Запустить турнир (только админы)."""
-    chat = update.effective_chat
-    user = update.effective_user
-    member = await context.bot.get_chat_member(chat.id, user.id)
-    if not (member.status in ("administrator", "creator") or user.id in ALLOWED_IDS):
-        return await update.message.reply_text("❌ Только администратор может запускать турнир.")
-
+    chat_id = update.effective_chat.id
     try:
-        text, kb = tournament.start_tournament(chat.id)
+        byes, msg, kb = tournament.start_tournament(chat_id)
     except ValueError as e:
         return await update.message.reply_text(str(e))
-    await context.bot.send_message(chat_id=chat.id, text=text, reply_markup=kb)
+    # сообщаем о bye
+    for bye in byes:
+        await context.bot.send_message(chat_id, f"🎉 {bye} получает bye и сразу в следующий раунд!")
+    # первая пара
+    await context.bot.send_message(chat_id, text=msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подтверждение готовности пары."""
-    query = update.callback_query
-    await query.answer()
-    chat_id = query.message.chat.id
-    user = query.from_user
-
-    result = tournament.confirm_ready(chat_id, user, query.data)
-    if result:
-        # result — либо строка с чьим ходом, либо строка "Раунд ...", либо финал
-        # удаляем старую кнопку
-        await query.message.delete()
-        await context.bot.send_message(chat_id=chat_id, text=result)
+    await tournament.confirm_ready(update, context)
 
 async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Бросить кубик."""
-    chat_id = update.effective_chat.id
-    user = update.effective_user
-    text = tournament.roll_dice(chat_id, user)
+    text = await tournament.roll_dice(update, context)
     await update.message.reply_text(text)
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+    global tournament
+    tournament = TournamentManager(app.job_queue)
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("game", game))
