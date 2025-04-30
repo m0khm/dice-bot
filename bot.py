@@ -1,3 +1,4 @@
+# bot.py
 
 import logging
 import os
@@ -12,7 +13,6 @@ from telegram.ext import (
 
 from game import TournamentManager
 
-# Логирование
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -21,16 +21,23 @@ logging.basicConfig(
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise RuntimeError("BOT_TOKEN не задан в .env")
+    raise RuntimeError("BOT_TOKEN not set in .env")
+
+COMMANDS_TEXT = (
+    "Привет! Я TournamentBot🎲\n\n"
+    "Доступные команды:\n"
+    "/start — показать это сообщение\n"
+    "/help — список команд\n"
+    "/game — (админ) начать сбор участников\n"
+    "/game_start — (админ) запустить турнир\n"
+    "/dice — бросить кубик во время хода\n"
+)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_chat.send_message(
-        "Привет! Я TournamentBot🎲\n\n"
-        "Команды:\n"
-        "/game — собрать участников (только админ)\n"
-        "/game_start — запустить турнир (только админ)\n"
-        "/dice — бросить кубик (во время хода)\n"
-    )
+    await update.effective_chat.send_message(COMMANDS_TEXT)
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_chat.send_message(COMMANDS_TEXT)
 
 async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -47,8 +54,7 @@ async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    added = tournament.add_player(q.message.chat.id, q.from_user)
-    if added:
+    if tournament.add_player(q.message.chat.id, q.from_user):
         lst = tournament.list_players(q.message.chat.id)
         await q.edit_message_text(f"Участвуют: {lst}", reply_markup=q.message.reply_markup)
 
@@ -58,10 +64,8 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         byes, msg, kb = tournament.start_tournament(chat_id)
     except ValueError as e:
         return await update.message.reply_text(str(e))
-    # сообщаем о bye, если есть
     for bye in byes:
-        await context.bot.send_message(chat_id, f"🎉 {bye} получает bye и сразу в следующий раунд!")
-    # запускаем первую пару
+        await context.bot.send_message(chat_id, f"🎉 {bye} сразу проходит в 2-й раунд (bye).")
     await context.bot.send_message(chat_id, text=msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,7 +73,8 @@ async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = await tournament.roll_dice(update, context)
-    await update.message.reply_text(text)
+    if text:
+        await update.message.reply_text(text)
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
@@ -77,6 +82,7 @@ def main():
     tournament = TournamentManager(app.job_queue)
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("game", game))
     app.add_handler(CallbackQueryHandler(join_game_cb, pattern="^join_game$"))
     app.add_handler(CommandHandler("game_start", game_start))
