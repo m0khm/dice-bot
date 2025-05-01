@@ -2,6 +2,8 @@ version: "3.8"
 services:
   bot:
     build: .
+    env_file:
+    - .env
     restart: always
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
