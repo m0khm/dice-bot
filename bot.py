@@ -63,7 +63,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "С помощью наших универсальных инструментов ты сможешь организовать или поучаствовать в любом розыгрыше или интерактиве👾 \n\n"
             "<b>Пиши /start и добавляй бота в свои чаты</b> 💥\n\n"
             " Создано для <a href='https://t.me/NookiqqOnTon'>@NookiqqOnTon</a>\n"
-            " При поддержке <a href='https://t.me/rapuzan'>@rapuzan</a>")
+            " При поддержке <a href='https://t.me/rapuzan'>@rapuzan</a>\n\n"
+            " Сайт/Site: <a href='https://dicebotdoc.glitch.me'>Tournament Dice Bot (Documentation)</a>"
+        )
         
         # Создание inline-кнопок
         keyboard = [
@@ -101,19 +103,19 @@ async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     member = await context.bot.get_chat_member(chat.id, update.effective_user.id)
     if member.status not in ("administrator", "creator"):
-        return await update.message.reply_text("Только админ может начать сбор.")
+        return await update.message.reply_text("⚠️ Только админ может начать сбор.")
     tournament.begin_signup(chat.id)
     kb = InlineKeyboardMarkup.from_button(
         InlineKeyboardButton("Участвую", callback_data="join_game")
     )
-    await chat.send_message("🔔Набор на игру! Нажмите «Участвую»", reply_markup=kb)
+    await chat.send_message("🔔 Набор на игру! Нажмите «Участвую»", reply_markup=kb)
 
 async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if tournament.add_player(q.message.chat.id, q.from_user):
         lst = tournament.list_players(q.message.chat.id)
-        await q.edit_message_text(f"Участвуют: {lst}", reply_markup=q.message.reply_markup)
+        await q.edit_message_text(f"👥 Участвуют: {lst}", reply_markup=q.message.reply_markup)
 
 async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -126,7 +128,7 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(str(e))
     for bye in byes:
         await context.bot.send_message(chat_id, f"🎉 {bye} сразу проходит в 2-й раунд (bye).")
-    m = await context.bot.send_message(chat_id, "Сетки турнира:\n" + pairs_list)
+    m = await context.bot.send_message(chat_id, "🕸️ Сетки турнира:\n" + pairs_list)
     await context.bot.pin_chat_message(chat_id, m.message_id)
     await context.bot.send_message(chat_id, first_msg, reply_markup=kb)
 
