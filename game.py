@@ -1,7 +1,7 @@
-# game.py
 import random
 import time
 from telegram import (
+    Update,                       # ← добавили
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -157,4 +157,4 @@ class TournamentManager:
         # переходим к следующей паре
         await self._proceed_next(chat_id, context.bot)
 
-    # … остальной код (_proceed_next, roll_dice и т.д.) …
+    # … здесь остаются ваши _proceed_next и roll_dice …
