@@ -4,7 +4,7 @@
 Telegram‑бот для проведения турниров с использованием кубика.
 
 ## Возможности
-* Команды `/game`, `/game_start`, `/dice`.
+* Команды `/start`, `/game`, `/game_start`, `/dice`, `/help`. 
 * Inline‑кнопки для подтверждения участия и готовности.
 * Турнирная сетка (single‑elimination) генерируется автоматически.
 * Таймаут 60 с для подтверждения готовности.
@@ -14,20 +14,37 @@ Telegram‑бот для проведения турниров с использ
 ## Запуск локально
 ```bash
 git clone https://github.com/m0khm/dice-bot
-cd tg_game_bot
+cd dice-bot
 cp .env.example .env            
 python -m venv venv && . venv/bin/activate
 pip install -r requirements.txt
-python -m bot.main
+python -m bot.py
 ```
 
-## Деплой на Railway
-1. Зарегистрируйтесь на <https://railway.app>.
-2. Создайте New Project → Deploy from GitHub, выберите репозиторий.
-3. В **Variables** добавьте `TELEGRAM_BOT_TOKEN`.
-4. Railway обнаружит `Dockerfile` и соберёт образ. Нажмите **Deploy**.
+## Деплой на Aeza
+1. Зарегистрируйтесь на <https://my.aeza.net>.
+2. Необходимо приобрести сервер VDS.
+3. Через cmd:
+```bash
+ssh user_name@ip_adress
+your_password ( пароль невидим, надо просто нажать Enter)
+cd dice
+cd dice-bot 
+source venv/bin/activate
+python bot.py
+```
+5. В **.env** добавьте `TELEGRAM_BOT_TOKEN`.
 
-> **Heroku:** аналогично: `heroku create`, `heroku config:set TELEGRAM_BOT_TOKEN=...`, push в Git.
+Для постоянной работы на сервере:
+```bash
+---(единоразово)---
+sudo apt update
+sudo apt install -y docker.io docker-compose
+sudo systemctl enable --now docker 
+-------------------
+Запуск: docker-compose up -d --build
+Проверка статуса: docker ps
+```
 
 ## Структура
 ```
@@ -36,11 +53,9 @@ tg_game_bot/
 ├── bot/
 │   ├── __init__.py
 │   ├── main.py          # точка входа
-│   ├── game.py          # логика турнира
-│   └── handlers.py      # обработчики Telegram
+│   └── game.py          # логика турнира
 │
 ├── requirements.txt
 ├── Dockerfile
-├── Procfile             # для Heroku
 └── README.md
 ```
