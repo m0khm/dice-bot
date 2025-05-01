@@ -92,7 +92,7 @@ class TournamentManager:
         # проверяем, что нажал игрок из пары
         pair = data["pairs"][idx]
         if name not in pair:
-            return await q.answer("Вы не в этой паре.", show_alert=True)
+            return await q.answer("❌ Вы не в этой паре.", show_alert=True)
 
         lst = data.setdefault("ready", {}).setdefault(idx, [])
         if name in lst:
@@ -241,15 +241,15 @@ class TournamentManager:
         data    = self.chats[chat_id]
 
         if data["stage"] != "round":
-            return "Турнир ещё не идёт."
+            return "❗Турнир ещё не идёт."
 
         idx = data["current_pair_idx"]
         if idx >= len(data["pairs"]):
-            return "Нет активной пары."
+            return "❗ Нет активной пары."
 
         a, b = data["pairs"][idx]
         if name not in (a, b):
-            return "Вы не участвуете в этой паре."
+            return "❌ Вы не участвуете в этой паре."
 
         wins  = data["round_wins"].setdefault(idx, {a: 0, b: 0})
         rolls = data["round_rolls"].setdefault(idx, {})
@@ -258,7 +258,7 @@ class TournamentManager:
         # чья очередь
         turn = first if not rolls else second if len(rolls) == 1 else None
         if name != turn:
-            return "Сейчас не ваш ход."
+            return "❌ Сейчас не ваш ход."
 
         val = random.randint(1, 6)
         rolls[name] = val
@@ -272,7 +272,7 @@ class TournamentManager:
             r1, r2 = rolls[a], rolls[b]
             if r1 == r2:
                 data["round_rolls"][idx] = {}
-                return f"Ничья {r1}–{r2}! Переброс, {self._format_username(first)} снова первым."
+                return f"Ничья. Выпало {r1}–{r2}! Переброс, {self._format_username(first)} снова ходит первым."
 
             winner = a if r1 > r2 else b
             wins[winner] += 1
@@ -280,7 +280,7 @@ class TournamentManager:
 
             # если набрал 2 победы
             if wins[winner] >= 2:
-                await update.effective_chat.send_message(f"Победитель пары: {self._format_username(winner)}")
+                await update.effective_chat.send_message(f"🎉 Победитель пары: {self._format_username(winner)}")
                 data["next_round"].append(winner)
                 await self._proceed_next(chat_id, context.bot)
                 return ""
