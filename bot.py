@@ -71,7 +71,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [
                 InlineKeyboardButton("👤 Dev.", url="https://t.me/rapuzan"),
-                InlineKeyboardButton("⚡️ The Best Community", url="https://t.me/nookiqqonton")
+                InlineKeyboardButton("⚡️ The Best Community", url="https://t.me/nookiqqonton"),
+                InlineKeyboardButton("🌐 Website | Documentation ", url="https://dicebotdoc.glitch.me")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
