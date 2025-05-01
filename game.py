@@ -14,6 +14,9 @@ class TournamentManager:
         self.job_queue = job_queue
         self.chats = {}
 
+    def _format_username(self, name):
+        return f"@{name}" if name and not name.startswith('@') else name
+
     # ───────── signup ─────────
     def begin_signup(self, chat_id):
         self.chats[chat_id] = {
@@ -37,7 +40,7 @@ class TournamentManager:
         return True
 
     def list_players(self, chat_id):
-        return ", ".join(self.chats[chat_id]["players"])
+        return ", ".join(self._format_username(p) for p in self.chats[chat_id]["players"])
 
     # ───────── формируем пары ─────────
     def start_tournament(self, chat_id):
@@ -66,9 +69,11 @@ class TournamentManager:
         })
 
         pairs_list = "\n".join(
-            f"Пара {i+1}: {a} vs {b}" for i, (a, b) in enumerate(pairs)
+            f"Пара {i+1}: {self._format_username(a)} vs {self._format_username(b)}" 
+            for i, (a, b) in enumerate(pairs)
         )
-        first_msg = f"Пара 1: {pairs[0][0]} vs {pairs[0][1]}\nНажмите «Готов?»"
+        first_msg = (f"Пара 1: {self._format_username(pairs[0][0])} vs "
+                     f"{self._format_username(pairs[0][1])}\nНажмите «Готов?»")
         kb = InlineKeyboardMarkup.from_button(
             InlineKeyboardButton("Готов?", callback_data="ready_0")
         )
@@ -109,7 +114,7 @@ class TournamentManager:
             data["ready_jobs"][idx] = job
             await context.bot.send_message(
                 chat_id,
-                f"✅ {name} готов! Ждём второго игрока до 60 сек."
+                f"✅ {self._format_username(name)} готов! Ждём второго игрока до 60 сек."
             )
 
         # Второй клик — оба готовы
@@ -125,7 +130,7 @@ class TournamentManager:
                 data["turn_order"][idx] = (first, second)
                 await context.bot.send_message(
                     chat_id,
-                    f"🎲 Оба готовы! {first} ходит первым. Используйте /dice"
+                    f"🎲 Оба готовы! {self._format_username(first)} ходит первым. Используйте /dice"
                 )
 
     # ───────── таймаут 60 с ─────────
@@ -148,14 +153,16 @@ class TournamentManager:
             data["next_round"].append(winner)
             await context.bot.send_message(
                 chat_id,
-                f"⏰ Время вышло! ✅ {winner} прошёл дальше, а {loser} не подтвердил готовность."
+                f"⏰ Время вышло! ✅ {self._format_username(winner)} прошёл дальше, "
+                f"а {self._format_username(loser)} не подтвердил готовность."
             )
         # никто не подтвердил
         else:
             a, b = pair
             await context.bot.send_message(
                 chat_id,
-                f"⏰ Никто не подтвердил готовность — оба выбывают: {a}, {b}."
+                f"⏰ Никто не подтвердил готовность — оба выбывают: "
+                f"{self._format_username(a)}, {self._format_username(b)}."
             )
 
         # далее
@@ -176,7 +183,8 @@ class TournamentManager:
             )
             await bot.send_message(
                 chat_id,
-                f"Следующая пара {idx+1}: {a} vs {b}\nНажмите «Готов?»",
+                f"Следующая пара {idx+1}: {self._format_username(a)} vs "
+                f"{self._format_username(b)}\nНажмите «Готов?»",
                 reply_markup=kb
             )
             return
@@ -204,7 +212,7 @@ class TournamentManager:
             await bot.pin_chat_message(chat_id, m.message_id)
 
             for bye in byes:
-                await bot.send_message(chat_id, f"🎉 {bye} получает bye.")
+                await bot.send_message(chat_id, f"🎉 {self._format_username(bye)} получает bye.")
             await bot.send_message(chat_id, first_msg, reply_markup=kb)
             return
 
@@ -217,11 +225,11 @@ class TournamentManager:
             runner = p if w.get(p, 0) < w.get(q, 0) else q
         thirds = data["semifinal_losers"]
 
-        text = f"🏆 Победитель: {champ}\n"
+        text = f"🏆 Победитель: {self._format_username(champ)}\n"
         if runner:
-            text += f"🥈 Второе: {runner}\n"
+            text += f"🥈 Второе: {self._format_username(runner)}\n"
         if len(thirds) >= 2:
-            text += f"🥉 Третьи: {thirds[0]}, {thirds[1]}\n"
+            text += f"🥉 Третьи: {self._format_username(thirds[0])}, {self._format_username(thirds[1])}\n"
 
         await bot.send_message(chat_id, text)
         data["stage"] = "finished"
@@ -254,17 +262,17 @@ class TournamentManager:
 
         val = random.randint(1, 6)
         rolls[name] = val
-        await update.effective_chat.send_message(f"{name} бросил 🎲 {val}.")
+        await update.effective_chat.send_message(f"{self._format_username(name)} бросил 🎲 {val}.")
 
         # если ещё есть второй
         if len(rolls) < 2:
             nxt = second if name == first else first
-            return f"Ход {nxt}."
+            return f"Ход {self._format_username(nxt)}."
         else:
             r1, r2 = rolls[a], rolls[b]
             if r1 == r2:
                 data["round_rolls"][idx] = {}
-                return f"Ничья {r1}–{r2}! Переброс, {first} снова первым."
+                return f"Ничья {r1}–{r2}! Переброс, {self._format_username(first)} снова первым."
 
             winner = a if r1 > r2 else b
             wins[winner] += 1
@@ -272,10 +280,10 @@ class TournamentManager:
 
             # если набрал 2 победы
             if wins[winner] >= 2:
-                await update.effective_chat.send_message(f"Победитель пары: {winner}")
+                await update.effective_chat.send_message(f"Победитель пары: {self._format_username(winner)}")
                 data["next_round"].append(winner)
                 await self._proceed_next(chat_id, context.bot)
                 return ""
             else:
                 data["turn_order"][idx] = (first, second)
-                return f"Счёт {wins[a]}–{wins[b]}. {first} ходит первым."
+                return f"Счёт {wins[a]}–{wins[b]}. {self._format_username(first)} ходит первым."
