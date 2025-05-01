@@ -1,3 +1,4 @@
+# bot.py
 import logging
 import os
 from dotenv import load_dotenv
@@ -74,28 +75,18 @@ async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"Участвуют: {lst}", reply_markup=q.message.reply_markup)
 
 async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Админ формирует сетку и запускает турнир."""
     chat_id = update.effective_chat.id
-
-    # ⬇️  проверяем права администратора
     member = await context.bot.get_chat_member(chat_id, update.effective_user.id)
     if member.status not in ("administrator", "creator"):
         return await update.message.reply_text("Только админ может запустить турнир.")
-
     try:
         byes, pairs_list, first_msg, kb = tournament.start_tournament(chat_id)
     except ValueError as e:
         return await update.message.reply_text(str(e))
-
-    # bye-игроки
     for bye in byes:
         await context.bot.send_message(chat_id, f"🎉 {bye} сразу проходит в 2-й раунд (bye).")
-
-    # сетка + закреп
     m = await context.bot.send_message(chat_id, "Сетки турнира:\n" + pairs_list)
     await context.bot.pin_chat_message(chat_id, m.message_id)
-
-    # первая пара
     await context.bot.send_message(chat_id, first_msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -122,7 +113,7 @@ def main():
     app.add_handler(CommandHandler("game",       game))
     app.add_handler(CallbackQueryHandler(join_game_cb, pattern="^join_game$"))
     app.add_handler(CommandHandler("game_start", game_start))
-    app.add_handler(CallbackQueryHandler(ready_cb, pattern="^ready_"))
+    app.add_handler(CallbackQueryHandler(ready_cb,   pattern="^ready_"))
     app.add_handler(CommandHandler("dice",       dice))
 
     app.run_polling()
