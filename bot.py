@@ -29,14 +29,14 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not set in .env")
 
-# Текст для /start и /help
+# Текст для /start
 COMMANDS_TEXT = (
-    "Привет! Я TournamentBot🎲\n\n"
-    "/start — показать это сообщение\n"
-    "/help — список команд\n"
-    "/game — (админ) начать сбор участников\n"
-    "/game_start — (админ) запустить турнир\n"
-    "/dice — бросить кубик во время хода\n"
+    "Привет! Я бот-рандомайзер. Доступные команды:\n"
+        "/start — 🤖 Все функции этого бота"
+        "/game — 👤 Начать побор участников (админ) "
+        "/game_start — 🎮 Запустить турнир (админ)\n"
+        "/dice — 🎲 Бросить кубик во время хода\n"
+        "/help — 🛟 Помощь\n"
 )
 
 # ──────────── Регистрация команд для подсказки `/` ────────────
@@ -52,9 +52,50 @@ async def on_startup(app):
 # ──────────── Хендлеры ────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
-
+# ──────────── Хендлер для /help ────────────
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_chat.send_message(COMMANDS_TEXT)
+    try:
+        # Текст с HTML-разметкой
+        caption = (
+            "<b>Привет, я бот-рандомайзер</b>\n"
+            "cозданный для розыгрышей и интерактивов!\n\n"
+            "✨ Хочешь испытать удачу? Этот бот для тебя! 🎯\n"
+            "С помощью наших универсальных инструментов ты сможешь организовать или поучаствовать в любом розыгрыше или интерактиве👾 \n\n"
+            "<b>Пиши /start и добавляй бота в свои чаты</b> 💥\n\n"
+            " Создано для <a href='https://t.me/NookiqqOnTon'>@NookiqqOnTon</a>\n"
+            " При поддержке <a href='https://t.me/rapuzan'>@rapuzan</a>")
+        
+        # Создание inline-кнопок
+        keyboard = [
+            [
+                InlineKeyboardButton("👤 Dev.", url="https://t.me/rapuzan"),
+                InlineKeyboardButton("⚡️ The Best Community", url="https://t.me/nookiqqonton")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Отправка фото с подписью
+        try:
+            with open('noki_rapu.jpg', 'rb') as photo:
+                await update.effective_chat.send_photo(
+                    photo=photo,
+                    caption=caption,
+                    parse_mode='HTML',
+                    reply_markup=reply_markup
+                )
+        except FileNotFoundError:
+            # Если фото не найдено, отправляется только текст с кнопками
+            await update.effective_chat.send_message(
+                text="📷 " + caption,
+                parse_mode='HTML',
+                reply_markup=reply_markup,
+                disable_web_page_preview=True
+            )
+
+    except Exception as e:
+        await update.effective_chat.send_message(f"⚠️ Ошибка: {str(e)}")
+
+# ─────────────────────────────────────
 
 async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -65,7 +106,7 @@ async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup.from_button(
         InlineKeyboardButton("Участвую", callback_data="join_game")
     )
-    await chat.send_message("Набор на игру! Нажмите «Участвую»", reply_markup=kb)
+    await chat.send_message("🔔Набор на игру! Нажмите «Участвую»", reply_markup=kb)
 
 async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -78,7 +119,7 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     member = await context.bot.get_chat_member(chat_id, update.effective_user.id)
     if member.status not in ("administrator", "creator"):
-        return await update.message.reply_text("Только админ может запустить турнир.")
+        return await update.message.reply_text("⚠️ Только админ может запустить турнир.")
     try:
         byes, pairs_list, first_msg, kb = tournament.start_tournament(chat_id)
     except ValueError as e:
