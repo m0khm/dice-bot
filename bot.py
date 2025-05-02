@@ -27,7 +27,7 @@ if not TOKEN:
 # Список разрешённых чатов через запятую
 ALLOWED_CHATS = {int(x) for x in os.getenv("ALLOWED_CHATS", "").split(",") if x}
 # Ваш ID для уведомлений (например, при обмене очков)
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+OWNER_IDS = [int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()]
 # Путь к файлу базы очков
 DB_PATH = os.getenv("DB_PATH", "scores.db")
 
@@ -141,10 +141,16 @@ async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    uname = q.from_user.username or q.from_user.full_name
-    pts = tournament.get_points(uname)
-    await context.bot.send_message(OWNER_ID, f"{uname} запросил обмен {pts} очков")
-    await q.edit_message_text("✅ Запрос отправлен админу")
+    user = q.from_user
+    username = user.username or user.full_name
+    pts = tournament.get_points(username) or 0
+
+    text = f"Пользователь {username} запрашивает обмен {pts} очков."
+    for admin_id in OWNER_IDS:
+        await context.bot.send_message(admin_id, text)
+
+    await q.edit_message_text("✅ Ваш запрос отправлен администраторам.")
+
 
 # ──────────── main ────────────
 def main():
