@@ -270,7 +270,7 @@ class TournamentManager:
         if w:
             p, q = data["pairs"][0]
             runner = p if w.get(p, 0) < w.get(q, 0) else q
-        thirds = data["semifinal_losers"])
+        thirds = data["semifinal_losers"]
 
         text = f"🏆 Победитель: {self._format_username(champ)}\n"
         if runner:
