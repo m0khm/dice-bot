@@ -205,7 +205,7 @@ class TournamentManager:
         await self._proceed_next(chat_id, context.bot)
 
     # ───────── переход к следующему шагу ─────────
-    async def _proceed_next(self, chat_id, bot):
+        async def _proceed_next(self, chat_id, bot):
         data = self.chats[chat_id]
         data["current_pair_idx"] += 1
         idx = data["current_pair_idx"]
@@ -228,6 +228,15 @@ class TournamentManager:
         # собираем победителей этого раунда
         winners = data["next_round"]
 
+        # ❗ если нет победителей — турнир прерван
+        if not winners:
+            await bot.send_message(
+                chat_id,
+                "⚠️ Никто из участников не проявил активность. Турнир завершён без победителя."
+            )
+            self.chats.pop(chat_id, None)  # очищаем данные турнира
+            return
+
         # если есть новый раунд
         if len(winners) > 1:
             data["players"] = winners.copy()
@@ -243,6 +252,7 @@ class TournamentManager:
                 await bot.send_message(chat_id, f"🎉 {self._format_username(bye)} получает bye.")
             await bot.send_message(chat_id, first_msg, reply_markup=kb)
             return
+            
         # финал и итоги
         champ  = winners[0]
         runner = None
