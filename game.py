@@ -1,4 +1,3 @@
-# game.py
 import random
 import time
 from telegram import (
@@ -8,6 +7,7 @@ from telegram import (
     Message,
 )
 from telegram.ext import CallbackContext, ContextTypes
+
 
 class TournamentManager:
     def __init__(self, job_queue):
@@ -21,12 +21,12 @@ class TournamentManager:
     def begin_signup(self, chat_id):
         self.chats[chat_id] = {
             "players": [], "stage": "signup",
-            "next_round": [], "pairs": [],
+            "next_round": [], "pairs": [], 
             "current_pair_idx": 0, "round_pairs_count": 0,
             "ready": {}, "first_ready_time": {},
             "ready_jobs": {}, "round_wins": {},
             "round_rolls": {}, "turn_order": {},
-            "semifinal_losers": [],
+            "semifinal_losers": {}, "pair_timers": {}
         }
 
     def add_player(self, chat_id, user):
@@ -65,7 +65,7 @@ class TournamentManager:
             "round_pairs_count": len(pairs),
             "ready": {}, "first_ready_time": {},
             "ready_jobs": {}, "round_wins": {},
-            "round_rolls": {}, "turn_order": {},
+            "round_rolls": {}, "turn_order": {}
         })
 
         pairs_list = "\n".join(
@@ -106,7 +106,7 @@ class TournamentManager:
             data["first_ready_time"][idx] = now
             job = self.job_queue.run_once(
                 self._ready_timeout,
-                60,
+                120,
                 chat_id=chat_id,
                 data={"idx": idx},
                 name=f"ready_timeout_{chat_id}_{idx}"
@@ -114,13 +114,13 @@ class TournamentManager:
             data["ready_jobs"][idx] = job
             await context.bot.send_message(
                 chat_id,
-                f"✅ {self._format_username(name)} готов! Ждём второго игрока до 60 сек."
+                f"✅ {self._format_username(name)} готов! Ждём второго игрока до 120 сек."
             )
 
         # Второй клик — оба готовы
         else:
             first_ts = data["first_ready_time"].get(idx, 0)
-            if now - first_ts <= 60:
+            if now - first_ts <= 120:
                 job = data["ready_jobs"].pop(idx, None)
                 if job:
                     job.schedule_removal()
@@ -132,8 +132,10 @@ class TournamentManager:
                     chat_id,
                     f"🎲 Оба готовы! {self._format_username(first)} ходит первым. Используйте /dice"
                 )
+            else:
+                await context.bot.send_message(chat_id, "⏰ Время вышло, переходим к следующей паре.")
 
-    # ───────── таймаут 60 с ─────────
+    # ───────── таймаут 120 с ─────────
     async def _ready_timeout(self, context: CallbackContext):
         job       = context.job
         chat_id   = job.chat_id
@@ -233,7 +235,7 @@ class TournamentManager:
 
         await bot.send_message(chat_id, text)
         data["stage"] = "finished"
-
+        
     # ───────── бросок кубика ─────────
     async def roll_dice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
