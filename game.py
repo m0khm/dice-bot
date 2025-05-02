@@ -205,7 +205,7 @@ class TournamentManager:
         await self._proceed_next(chat_id, context.bot)
 
     # ───────── переход к следующему шагу ─────────
-        async def _proceed_next(self, chat_id, bot):
+    async def _proceed_next(self, chat_id, bot):
         data = self.chats[chat_id]
         data["current_pair_idx"] += 1
         idx = data["current_pair_idx"]
