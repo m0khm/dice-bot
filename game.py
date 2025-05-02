@@ -1,17 +1,8 @@
 # game.py
 import random
 import time
-
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
-from telegram.ext import (
-    CallbackContext,
-    ContextTypes,
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from telegram.ext import CallbackContext, ContextTypes
 
 class TournamentManager:
     def __init__(self, job_queue):
@@ -87,31 +78,28 @@ class TournamentManager:
             "finished_pairs": set(),
         })
 
-        # Список пар строкой
         pairs_list = "\n".join(
             f"Пара {i+1}: {self._format_username(a)} vs {self._format_username(b)}"
             for i, (a, b) in enumerate(pairs)
         )
 
-        # Сообщение о первой паре
         first_pair = pairs[0]
         first_msg = (
             f"Пара 1: {self._format_username(first_pair[0])} vs "
             f"{self._format_username(first_pair[1])}\nНажмите «Готов?»"
         )
-        kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Готов?", callback_data="ready_0")]]
-        )
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("Готов?", callback_data="ready_0")]])
 
-        # Таймер полной неактивности пары (120 секунд)
-        job = self.job_queue.run_once(
-            self._pair_timeout,
-            when=120,
-            chat_id=chat_id,
-            data={"idx": 0},
-            name=f"pair_timeout_{chat_id}_0"
-        )
-        data["pair_timers"][0] = job
+        # планируем общий таймер 120 сек (если job_queue есть)
+        if self.job_queue:
+            job = self.job_queue.run_once(
+                self._pair_timeout,
+                when=120,
+                chat_id=chat_id,
+                data={"idx": 0},
+                name=f"pair_timeout_{chat_id}_0"
+            )
+            data["pair_timers"][0] = job
 
         return byes, pairs_list, first_msg, kb
 
@@ -122,45 +110,42 @@ class TournamentManager:
 
         chat_id = q.message.chat.id
         idx = int(q.data.split("_")[1])
-        user = q.from_user
-        name = user.username or user.full_name
+        name = q.from_user.username or q.from_user.full_name
         data = self.chats[chat_id]
         pair = data["pairs"][idx]
 
-        # Проверяем, что нажал один из пары
         if name not in pair:
             return await q.answer("❌ Вы не в этой паре.", show_alert=True)
 
         ready_list = data["ready"].setdefault(idx, [])
         if name in ready_list:
-            return  # уже нажимал
+            return
 
         ready_list.append(name)
         now = time.time()
 
-        # Первый клик — старт тайм-аута готовности (60 сек)
         if len(ready_list) == 1:
             data["first_ready_time"][idx] = now
-            job = self.job_queue.run_once(
-                self._ready_timeout,
-                when=60,
-                chat_id=chat_id,
-                data={"idx": idx},
-                name=f"ready_timeout_{chat_id}_{idx}"
-            )
-            data["ready_jobs"][idx] = job
+            if self.job_queue:
+                job = self.job_queue.run_once(
+                    self._ready_timeout,
+                    when=60,
+                    chat_id=chat_id,
+                    data={"idx": idx},
+                    name=f"ready_timeout_{chat_id}_{idx}"
+                )
+                data["ready_jobs"][idx] = job
             await context.bot.send_message(
                 chat_id,
                 f"✅ {self._format_username(name)} готов! Ждём второго игрока до 60 сек."
             )
-            # Сброс полного таймера пары на 60 (оставляем только один активный)
-            self._reset_pair_timer(chat_id, idx, 60)
+            # сброс общего таймера пары на 60 сек
+            if self.job_queue:
+                self._reset_pair_timer(chat_id, idx, 60)
 
-        # Второй клик — оба готовы
         else:
             first_ts = data["first_ready_time"].get(idx, 0)
             if now - first_ts <= 60:
-                # Отменяем тайм-аут ожидания второго
                 job = data["ready_jobs"].pop(idx, None)
                 if job:
                     job.schedule_removal()
@@ -173,7 +158,7 @@ class TournamentManager:
                     f"🎲 Оба готовы! {self._format_username(first)} ходит первым. Используйте /dice"
                 )
 
-    # ───────── таймаут 60 с ─────────
+    # ───────── таймаут 60 сек ─────────
     async def _ready_timeout(self, context: CallbackContext):
         job = context.job
         chat_id = job.chat_id
@@ -182,11 +167,9 @@ class TournamentManager:
         confirmed = data["ready"].get(idx, [])
         pair = data["pairs"][idx]
 
-        # Если оба уже готовы — нет действий
         if len(confirmed) >= 2:
             return
 
-        # Если подтвердил только один
         if len(confirmed) == 1:
             winner = confirmed[0]
             loser = pair[0] if pair[1] == winner else pair[1]
@@ -197,7 +180,6 @@ class TournamentManager:
                 f"⏰ Время вышло! ✅ {self._format_username(winner)} прошёл дальше, "
                 f"{self._format_username(loser)} не подтвердил готовность."
             )
-        # Если никто не подтвердил
         else:
             a, b = pair
             await context.bot.send_message(
@@ -205,34 +187,31 @@ class TournamentManager:
                 f"⏰ Никто не подтвердил готовность — оба выбывают: "
                 f"{self._format_username(a)}, {self._format_username(b)}."
             )
-        # Переходим к следующей паре
         await self._proceed_next(chat_id, context.bot)
 
     # ───────── сброс таймера пары ─────────
     def _reset_pair_timer(self, chat_id: int, idx: int, when: int):
         data = self.chats[chat_id]
-        # отменяем старый
         old = data["pair_timers"].pop(idx, None)
         if old:
             old.schedule_removal()
-        # создаём новый
-        job = self.job_queue.run_once(
-            self._pair_timeout,
-            when=when,
-            chat_id=chat_id,
-            data={"idx": idx},
-            name=f"pair_timeout_{chat_id}_{idx}"
-        )
-        data["pair_timers"][idx] = job
+        if self.job_queue:
+            job = self.job_queue.run_once(
+                self._pair_timeout,
+                when=when,
+                chat_id=chat_id,
+                data={"idx": idx},
+                name=f"pair_timeout_{chat_id}_{idx}"
+            )
+            data["pair_timers"][idx] = job
 
-    # ───────── таймаут пары 120 с ─────────
+    # ───────── таймаут пары 120 сек ─────────
     async def _pair_timeout(self, context: CallbackContext):
         job = context.job
         chat_id = job.chat_id
         idx = job.data["idx"]
         data = self.chats[chat_id]
 
-        # Если пара уже сыграна — ничего не делаем
         if idx in data["finished_pairs"]:
             return
 
@@ -244,7 +223,7 @@ class TournamentManager:
             await context.bot.send_message(
                 chat_id,
                 f"⏰ Пара {self._format_username(a)} vs {self._format_username(b)} "
-                "не подтвердила готовность за 120 секунд. Оба выбывают."
+                "не подтвердила готовность за 120 сек. Оба выбывают."
             )
             data["finished_pairs"].add(idx)
 
@@ -257,7 +236,6 @@ class TournamentManager:
         idx = data["current_pair_idx"]
         pairs = data["pairs"]
 
-        # Если ещё есть пары в раунде
         if idx < len(pairs):
             a, b = pairs[idx]
             kb = InlineKeyboardMarkup(
@@ -271,7 +249,6 @@ class TournamentManager:
             )
             return
 
-        # Собираем победителей
         winners = data["next_round"]
         if not winners:
             await bot.send_message(
@@ -281,7 +258,6 @@ class TournamentManager:
             self.chats.pop(chat_id, None)
             return
 
-        # Полуфинал: отмечаем лузеров
         if data["round_pairs_count"] == 2:
             for i, (x, y) in enumerate(data["pairs"]):
                 w = data["round_wins"].get(i, {})
@@ -289,7 +265,6 @@ class TournamentManager:
                     loser = x if w[x] < w[y] else y
                     data["semifinal_losers"].append(loser)
 
-        # Если есть следующий раунд
         if len(winners) > 1:
             data["players"] = winners.copy()
             byes, pairs_list, first_msg, kb = self.start_tournament(chat_id)
@@ -307,7 +282,6 @@ class TournamentManager:
             await bot.send_message(chat_id, first_msg, reply_markup=kb)
             return
 
-        # Финал и объявление призёров
         champ = winners[0]
         w = data["round_wins"].get(0, {})
         runner = None
@@ -346,18 +320,14 @@ class TournamentManager:
         rolls = data["round_rolls"].setdefault(idx, {})
         first, second = data["turn_order"].get(idx, (a, b))
 
-        # Чья очередь
         turn = first if not rolls else second if len(rolls) == 1 else None
         if name != turn:
             return "❌ Сейчас не ваш ход."
 
         val = random.randint(1, 6)
         rolls[name] = val
-        await update.effective_chat.send_message(
-            f"{self._format_username(name)} бросил 🎲 {val}."
-        )
+        await update.effective_chat.send_message(f"{self._format_username(name)} бросил 🎲 {val}.")
 
-        # Если второй ещё не ходил
         if len(rolls) < 2:
             nxt = second if name == first else first
             return f"Ход {self._format_username(nxt)}."
@@ -380,7 +350,6 @@ class TournamentManager:
                 )
                 data["next_round"].append(winner)
                 data["finished_pairs"].add(idx)
-                # Отменяем таймер этой пары
                 jt = data["pair_timers"].pop(idx, None)
                 if jt:
                     jt.schedule_removal()
