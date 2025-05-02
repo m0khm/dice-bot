@@ -27,6 +27,7 @@ class TournamentManager:
             "round_rolls": {}, "turn_order": {},
             "semifinal_losers": [],
             "pair_timers": {},  # Новая структура для хранения таймеров
+            "finished_pairs": set()
         }
 
     def add_player(self, chat_id, user):
@@ -65,7 +66,8 @@ class TournamentManager:
             "round_pairs_count": len(pairs),
             "ready": {}, "first_ready_time": {},
             "ready_jobs": {}, "round_wins": {},
-            "round_rolls": {}, "turn_order": {}
+            "round_rolls": {}, "turn_order": {},
+            "finished_pairs": set()
         })
 
         pairs_list = "\n".join(
@@ -159,6 +161,7 @@ class TournamentManager:
             winner = confirmed[0]
             loser = next(p for p in pair if p != winner)
             data["next_round"].append(winner)
+            data["finished_pairs"].add(idx)
             await context.bot.send_message(
                 chat_id,
                 f"⏰ Время вышло! ✅ {self._format_username(winner)} прошёл дальше, "
@@ -193,6 +196,9 @@ class TournamentManager:
         chat_id = job.chat_id
         idx = job.data["idx"]
         data = self.chats[chat_id]
+        #  Проверка: если пара уже завершена, ничего не делаем
+        if idx in data.get("finished_pairs", set()):
+            return
         pair = data["pairs"][idx]
         confirmed = data.get("ready", {}).get(idx, [])
 
@@ -202,7 +208,7 @@ class TournamentManager:
                 chat_id,
                 f"⏰ Пара {self._format_username(a)} vs {self._format_username(b)} не подтвердила готовность за 120 секунд. Выбывают оба."
             )
-
+            data["finished_pairs"].add(idx)
         await self._proceed_next(chat_id, context.bot)
 
     # ───────── переход к следующему шагу ─────────
