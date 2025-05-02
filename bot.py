@@ -1,8 +1,14 @@
-# bot.py
+# main.py
 import logging
 import os
+
 from dotenv import load_dotenv
-from telegram import BotCommand, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    BotCommand,
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -19,52 +25,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ──────────── Загрузка конфигурации ────────────
+# ──────────── Конфиг ────────────
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not set in .env")
-# Список разрешённых чатов через запятую
-ALLOWED_CHATS = {int(x) for x in os.getenv("ALLOWED_CHATS", "").split(",") if x}
-# Ваш ID для уведомлений (например, при обмене очков)
-OWNER_IDS = [int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()]
-# Путь к файлу базы очков
+ALLOWED_CHATS = {
+    int(x) for x in os.getenv("ALLOWED_CHATS", "").split(",") if x.strip()
+}
+OWNER_IDS = [
+    int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()
+]
 DB_PATH = os.getenv("DB_PATH", "scores.db")
 
-# ──────────── Текст /start и /help ────────────
+# Список команд для /start и /help
 COMMANDS_TEXT = (
     "Привет! Я бот-рандомайзер. Доступные команды:\n"
     "/start       — 🤖 Список команд\n"
-    "/game        — 👤 Начать сбор (админ)\n"
+    "/game        — 👤 Начать сбор участников (админ)\n"
     "/game_start  — 🎮 Запустить турнир (админ)\n"
-    "/dice        — 🎲 Бросить кубик\n"
+    "/dice        — 🎲 Бросок кубика во время хода\n"
     "/exchange    — 💱 Обменять очки (в личке)\n"
-    "/id          — 📋 Показать ID чата"
+    "/id          — 🆔 Показать ID чата\n"
 )
 
-# ──────────── Удаление вебхука ────────────
+# ─── Убираем старый вебхук и регистрируем подсказки /
 async def remove_webhook(app):
     await app.bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Webhook removed, pending updates cleared.")
+    logger.info("Webhook deleted.")
 
-# ──────────── Регистрация команд для автодополнения ────────────
 async def set_commands(app):
     await app.bot.set_my_commands([
-        BotCommand("start",      "Показать список команд"),
-        BotCommand("help",       "Помощь"),
-        BotCommand("game",       "Начать сбор (админ)"),
-        BotCommand("game_start", "Запустить турнир (админ)"),
-        BotCommand("dice",       "Бросить кубик"),
-        BotCommand("exchange",   "Обменять очки"),
-        BotCommand("id",         "Показать ID чата"),
+        BotCommand("start",     "Список команд"),
+        BotCommand("help",      "Помощь"),
+        BotCommand("game",      "Начать сбор (админ)"),
+        BotCommand("game_start","Запустить турнир (админ)"),
+        BotCommand("dice",      "Бросить кубик"),
+        BotCommand("exchange",  "Обменять очки"),
+        BotCommand("id",        "Показать ID чата"),
     ])
-    logger.info("Bot commands registered.")
+    logger.info("Bot commands set.")
 
-# ──────────── Проверка разрешённых чатов ────────────
-def is_allowed(chat_id: int) -> bool:
-    return chat_id in ALLOWED_CHATS
-
-# ──────────── Handlers ────────────
+# ─── Handlers ────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
@@ -72,12 +74,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
 async def show_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    await update.message.reply_text(f"Chat ID: `{chat.id}`", parse_mode="Markdown")
+    cid = update.effective_chat.id
+    await update.effective_chat.send_message(f"Chat ID: `{cid}`", parse_mode="Markdown")
+
+def is_allowed_chat(chat_id: int) -> bool:
+    return chat_id in ALLOWED_CHATS
 
 async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    if chat.type != "private" and not is_allowed(chat.id):
+    if chat.type != "private" and not is_allowed_chat(chat.id):
         return await update.message.reply_text("❌ Бот в этом чате не активен.")
     member = await context.bot.get_chat_member(chat.id, update.effective_user.id)
     if member.status not in ("administrator", "creator"):
@@ -89,16 +94,16 @@ async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    chat_id = q.message.chat.id
-    if not is_allowed(chat_id):
+    cid = q.message.chat.id
+    if not is_allowed_chat(cid):
         return
-    if tournament.add_player(chat_id, q.from_user):
-        lst = tournament.list_players(chat_id)
+    if tournament.add_player(cid, q.from_user):
+        lst = tournament.list_players(cid)
         await q.edit_message_text(f"Участвуют: {lst}", reply_markup=q.message.reply_markup)
 
 async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    if chat.type != "private" and not is_allowed(chat.id):
+    if chat.type != "private" and not is_allowed_chat(chat.id):
         return await update.message.reply_text("❌ Бот в этом чате не активен.")
     member = await context.bot.get_chat_member(chat.id, update.effective_user.id)
     if member.status not in ("administrator", "creator"):
@@ -107,6 +112,7 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         byes, pairs_list, first_msg, kb = tournament.start_tournament(chat.id)
     except ValueError as e:
         return await update.message.reply_text(str(e))
+
     for bye in byes:
         await context.bot.send_message(chat.id, f"🎉 {bye} получает bye")
     m = await context.bot.send_message(chat.id, "Сетки:\n" + pairs_list)
@@ -114,43 +120,47 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat.id, first_msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.callback_query.message.chat.id
-    if not is_allowed(chat_id):
+    cid = update.callback_query.message.chat.id
+    if not is_allowed_chat(cid):
         return
     await tournament.confirm_ready(update, context)
 
 async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    if chat.type != "private" and not is_allowed(chat.id):
+    if chat.type != "private" and not is_allowed_chat(chat.id):
         return await update.message.reply_text("❌ Бот в этом чате не активен.")
     text = await tournament.roll_dice(update, context)
     if text:
         await update.message.reply_text(text)
 
+# — обмен очков в личке —
 async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type != "private":
         return
     user = update.effective_user
-    pts = tournament.get_points(user.username or user.full_name)
-    if pts is None:
-        return await update.message.reply_text("У вас пока нет очков.")
+    uname = user.username or user.full_name
+    pts = tournament.get_points(uname)
+    if pts <= 0:
+        return await update.message.reply_text("У вас нет очков для обмена.")
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("Обменять", callback_data="exchange")]])
-    await update.message.reply_text(f"Ваши очки: {pts}", reply_markup=kb)
+    await update.message.reply_text(f"У вас {pts} очков", reply_markup=kb)
 
 async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     user = q.from_user
-    username = user.username or user.full_name
-    pts = tournament.get_points(username) or 0
-
-    text = f"Пользователь {username} запрашивает обмен {pts} очков."
-    for admin_id in OWNER_IDS:
-        await context.bot.send_message(admin_id, text)
-
-    await q.edit_message_text("✅ Ваш запрос отправлен администраторам.")
-
+    uname = user.username or user.full_name
+    pts = tournament.get_points(uname)
+    if pts <= 0:
+        return await q.edit_message_text("У вас нет очков.")
+    # снимаем очки
+    taken = tournament.exchange_points(uname)
+    # уведомляем админов
+    text = f"💱 {uname} обменял {taken} очков"
+    for aid in OWNER_IDS:
+        await context.bot.send_message(aid, text)
+    await q.edit_message_text(f"✅ Вы успешно обменяли {taken} очков")
 
 # ──────────── main ────────────
 def main():
@@ -161,15 +171,15 @@ def main():
         .post_init(set_commands)
         .build()
     )
-
     global tournament
     tournament = TournamentManager(
         job_queue=app.job_queue,
         allowed_chats=ALLOWED_CHATS,
         db_path=DB_PATH,
-        owner_id=OWNER_IDS
+        owner_ids=OWNER_IDS
     )
 
+    # Регистрация хендлеров
     app.add_handler(CommandHandler("start",      start))
     app.add_handler(CommandHandler("help",       help_command))
     app.add_handler(CommandHandler("id",         show_id))
