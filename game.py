@@ -25,8 +25,8 @@ class TournamentManager:
             "ready": {}, "first_ready_time": {},
             "ready_jobs": {}, "round_wins": {},
             "round_rolls": {}, "turn_order": {},
+            "semifinal_losers": [],
             "pair_timers": {},  # Новая структура для хранения таймеров
-            "tournament_over": False  # ✅ новый флаг
         }
 
     def add_player(self, chat_id, user):
@@ -65,8 +65,7 @@ class TournamentManager:
             "round_pairs_count": len(pairs),
             "ready": {}, "first_ready_time": {},
             "ready_jobs": {}, "round_wins": {},
-            "round_rolls": {}, "turn_order": {},
-            "semifinal_losers": []
+            "round_rolls": {}, "turn_order": {}
         })
 
         pairs_list = "\n".join(
@@ -209,9 +208,6 @@ class TournamentManager:
     # ───────── переход к следующему шагу ─────────
     async def _proceed_next(self, chat_id, bot):
         data = self.chats[chat_id]
-        # ✅ предотвращаем двойной вызов
-        if data.get("tournament_over"):
-            return
         data["current_pair_idx"] += 1
         idx = data["current_pair_idx"]
         pairs = data["pairs"]
@@ -242,7 +238,15 @@ class TournamentManager:
             )
             self.chats.pop(chat_id, None)  # очищаем данные турнира
             return
-
+            
+        # определяем лузеров полуфинала для третьего места
+        if data["round_pairs_count"] == 2:
+            for i, (x, y) in enumerate(data["pairs"]):
+                w = data["round_wins"].get(i, {})
+                if w.get(x, 0) != w.get(y, 0):
+                    loser = x if w[x] < w[y] else y
+                    data["semifinal_losers"].append(loser)
+                    
         # если есть новый раунд
         if len(winners) > 1:
             data["players"] = winners.copy()
@@ -266,7 +270,7 @@ class TournamentManager:
         if w:
             p, q = data["pairs"][0]
             runner = p if w.get(p, 0) < w.get(q, 0) else q
-        thirds = data.get("semifinal_losers", [])
+        thirds = data["semifinal_losers"])
 
         text = f"🏆 Победитель: {self._format_username(champ)}\n"
         if runner:
@@ -276,7 +280,6 @@ class TournamentManager:
 
         await bot.send_message(chat_id, text)
         data["stage"] = "finished"
-        data["tournament_over"] = True  # ✅ флаг установлен
         
     # ───────── бросок кубика ─────────
     async def roll_dice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
