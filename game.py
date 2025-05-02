@@ -65,6 +65,7 @@ class TournamentManager:
             "ready": {}, "first_ready_time": {},
             "ready_jobs": {}, "round_wins": {},
             "round_rolls": {}, "turn_order": {},
+            "semifinal_losers": []
         })
 
         pairs_list = "\n".join(
@@ -260,7 +261,7 @@ class TournamentManager:
         if w:
             p, q = data["pairs"][0]
             runner = p if w.get(p, 0) < w.get(q, 0) else q
-        thirds = data["semifinal_losers"]
+        thirds = data.get("semifinal_losers", [])
 
         text = f"🏆 Победитель: {self._format_username(champ)}\n"
         if runner:
