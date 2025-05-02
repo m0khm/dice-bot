@@ -167,7 +167,7 @@ def main():
         job_queue=app.job_queue,
         allowed_chats=ALLOWED_CHATS,
         db_path=DB_PATH,
-        owner_id=OWNER_ID
+        owner_id=OWNER_IDS
     )
 
     app.add_handler(CommandHandler("start",      start))
