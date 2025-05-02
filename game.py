@@ -26,6 +26,7 @@ class TournamentManager:
             "ready_jobs": {}, "round_wins": {},
             "round_rolls": {}, "turn_order": {},
             "pair_timers": {},  # Новая структура для хранения таймеров
+            "tournament_over": False  # ✅ новый флаг
         }
 
     def add_player(self, chat_id, user):
@@ -208,9 +209,13 @@ class TournamentManager:
     # ───────── переход к следующему шагу ─────────
     async def _proceed_next(self, chat_id, bot):
         data = self.chats[chat_id]
+        # ✅ предотвращаем двойной вызов
+        if data.get("tournament_over"):
+            return
         data["current_pair_idx"] += 1
         idx = data["current_pair_idx"]
         pairs = data["pairs"]
+        
 
         # ещё пары в раунде
         if idx < len(pairs):
@@ -271,6 +276,7 @@ class TournamentManager:
 
         await bot.send_message(chat_id, text)
         data["stage"] = "finished"
+        data["tournament_over"] = True  # ✅ флаг установлен
         
     # ───────── бросок кубика ─────────
     async def roll_dice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
