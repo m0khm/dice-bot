@@ -335,6 +335,13 @@ class TournamentManager:
             if wins[winner] >= 2:
                 await update.effective_chat.send_message(f"🎉 Победитель пары: {self._format_username(winner)}")
                 data["next_round"].append(winner)
+            
+                # ✅ Отмечаем как завершённую и отменяем таймер
+                data["finished_pairs"].add(idx)
+                job = data["pair_timers"].pop(idx, None)
+                if job:
+                    job.schedule_removal()
+            
                 await self._proceed_next(chat_id, context.bot)
                 return ""
             else:
