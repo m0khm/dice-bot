@@ -1,4 +1,4 @@
-# main.py
+# bot.py
 import logging
 import os
 
@@ -22,15 +22,14 @@ logger = logging.getLogger(__name__)
 
 # ──────────── Конфиг ────────────
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN        = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not set in .env")
-
-ALLOWED_CHATS = {int(x) for x in os.getenv("ALLOWED_CHATS", "").split(",") if x.strip()}
+ALLOWED_CHATS = {
+    int(x) for x in os.getenv("ALLOWED_CHATS", "").split(",") if x.strip()
+}
 OWNER_IDS    = [int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()]
 DB_PATH      = os.getenv("DB_PATH", "scores.db")
-
-MIN_EXCHANGE = 15  # порог в баллах
 
 COMMANDS_TEXT = (
     "Привет! Я бот-рандомайзер. Доступные команды:\n"
@@ -38,13 +37,12 @@ COMMANDS_TEXT = (
     "/game         — 👤 Начать сбор участников (админ)\n"
     "/game_start   — 🎮 Запустить турнир (админ)\n"
     "/dice         — 🎲 Бросок кубика во время хода\n"
-    "/exchange     — 💱 Обменять очки (минимум 15)\n"
+    "/exchange     — 💱 Обменять очки\n"
     "/points       — 📊 Мои очки\n"
-    "/leaderboard  — 🏆 Рейтинг топ-10 (только ≥15)\n"
+    "/leaderboard  — 🏆 Рейтинг топ-10\n"
     "/id           — 🆔 Показать ID чата\n"
 )
 
-# ─── Helpers ────────────
 async def remove_webhook(app):
     await app.bot.delete_webhook(drop_pending_updates=True)
     logger.info("Webhook deleted.")
@@ -66,7 +64,7 @@ async def set_commands(app):
 def is_allowed_chat(chat_id: int) -> bool:
     return chat_id in ALLOWED_CHATS
 
-# ─── Обработчики ────────────
+# ─── Handlers ────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
@@ -89,7 +87,8 @@ async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await chat.send_message("🔔 Нажмите «Участвую» для регистрации", reply_markup=kb)
 
 async def join_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
+    q = update.callback_query
+    await q.answer()
     cid = q.message.chat.id
     if not is_allowed_chat(cid):
         return
@@ -125,51 +124,40 @@ async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text:
         await update.message.reply_text(text)
 
-# — обмен очков в личке —
 async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type != "private":
         return
     uname = update.effective_user.username or update.effective_user.full_name
     pts = tournament.get_points(uname)
-    if pts < MIN_EXCHANGE:
-        return await update.message.reply_text(
-            f"❌ У вас {pts} очков. Минимальный порог для обмена — {MIN_EXCHANGE}."
-        )
+    if pts <= 0:
+        return await update.message.reply_text("У вас нет очков для обмена.")
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("Обменять", callback_data="exchange")]])
-    await update.message.reply_text(f"У вас {pts} очков. Нажмите «Обменять»", reply_markup=kb)
+    await update.message.reply_text(f"У вас {pts} очков", reply_markup=kb)
 
 async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
+    q = update.callback_query
+    await q.answer()
     uname = q.from_user.username or q.from_user.full_name
     pts = tournament.get_points(uname)
-    if pts < MIN_EXCHANGE:
-        return await q.edit_message_text(
-            f"❌ У вас {pts} очков. Минимальный порог для обмена — {MIN_EXCHANGE}."
-        )
+    if pts <= 0:
+        return await q.edit_message_text("У вас нет очков.")
     taken = tournament.exchange_points(uname)
     for aid in OWNER_IDS:
         await context.bot.send_message(aid, f"💱 {uname} обменял {taken} очков")
     await q.edit_message_text(f"✅ Вы успешно обменяли {taken} очков")
 
-# — мои очки (скрываем если < MIN_EXCHANGE) —
 async def points_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uname = update.effective_user.username or update.effective_user.full_name
     pts = tournament.get_points(uname)
-    if pts < MIN_EXCHANGE:
-        await update.effective_chat.send_message(
-            f"ℹ️ У вас менее {MIN_EXCHANGE} очков."
-        )
-    else:
-        await update.effective_chat.send_message(f"📊 {uname}, у вас {pts} очков.")
-##ррр
+    await update.effective_chat.send_message(f"📊 {uname}, у вас {pts} очков.")
+
 async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    top = tournament.get_leaderboard(50)  # получаем побольше, отфильтруем до топ-10
-    filtered = [(u, p) for u, p in top ]
-    if not filtered:
+    top = tournament.get_leaderboard(10)
+    if not top:
         return await update.effective_chat.send_message("Рейтинг пуст.")
-    text = "🏆 Топ-10:\n"
-    for i, (user, pts) in enumerate(filtered[:10], start=1):
+    text = "🏆 Топ-10 игроков:\n"
+    for i, (user, pts) in enumerate(top, start=1):
         text += f"{i}. {user}: {pts} очков\n"
     await update.effective_chat.send_message(text)
 
@@ -194,7 +182,6 @@ def main():
         owner_ids=OWNER_IDS
     )
 
-    # Регистрация хендлеров
     app.add_handler(CommandHandler("start",       start))
     app.add_handler(CommandHandler("help",        help_command))
     app.add_handler(CommandHandler("id",          show_id))
