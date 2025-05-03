@@ -197,6 +197,9 @@ def main():
 
     logger.info("Bot started")
     app.run_polling()
+    from datetime import timedelta
+    app.job_queue.run_once(lambda ctx: logger.info("JOBQUEUE WORKS!"), when=10)
+
 
 if __name__ == "__main__":
     main()
