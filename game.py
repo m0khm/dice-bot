@@ -1,13 +1,44 @@
 # game.py
+import sqlite3
 import random
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from telegram.ext import CallbackContext, ContextTypes
 
 class TournamentManager:
-    def __init__(self, job_queue):
+    FIRST_POINTS = 0
+    SECOND_POINTS = 25
+    THIRD_POINTS = 15
+
+    def __init__(
+        self,
+        job_queue,
+        allowed_chats=None,
+        db_path: str = "scores.db",
+        owner_ids=None
+    ):
+        # 1) очередь для таймеров
         self.job_queue = job_queue
+        # 2) множество разрешённых чатов
+        self.allowed_chats = set(allowed_chats or [])
+        # 3) кому шлём заявки на обмен
+        self.owner_ids = list(owner_ids or [])
+        # 4) внутренние данные турниров
         self.chats = {}
+
+        # 5) инициализируем SQLite для учёта очков
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._init_db()
+
+    def _init_db(self):
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scores (
+                username TEXT PRIMARY KEY,
+                points   INTEGER NOT NULL
+            );
+        """)
+        self.conn.commit()
 
     def _format_username(self, name: str) -> str:
         if not name:
