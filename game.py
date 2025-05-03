@@ -15,10 +15,10 @@ class TournamentManager:
     THIRD_POINTS = 15
 
     def __init__(self, job_queue, allowed_chats=None, db_path: str = "scores.db", owner_ids=None):
-        self.job_queue = job_queue
+        self.job_queue     = job_queue
         self.allowed_chats = set(allowed_chats or [])
-        self.owner_ids    = list(owner_ids or [])
-        self.chats        = {}
+        self.owner_ids     = list(owner_ids or [])
+        self.chats         = {}
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self._init_db()
 
@@ -35,6 +35,7 @@ class TournamentManager:
     def _format_username(self, name: str) -> str:
         return name if name.startswith("@") else f"@{name}"
 
+    # работа с очками
     def _add_points(self, username: str, pts: int):
         cur = self.conn.cursor()
         cur.execute("SELECT points FROM scores WHERE username=?", (username,))
