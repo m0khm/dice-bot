@@ -162,14 +162,13 @@ async def points_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.effective_chat.send_message(f"📊 {uname}, у вас {pts} очков.")
-
-# — рейтинг (только >= MIN_EXCHANGE) —
+##ррр
 async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     top = tournament.get_leaderboard(50)  # получаем побольше, отфильтруем до топ-10
-    filtered = [(u, p) for u, p in top if p >= MIN_EXCHANGE]
+    filtered = [(u, p) for u, p in top ]
     if not filtered:
         return await update.effective_chat.send_message("Рейтинг пуст.")
-    text = "🏆 Топ-10 (≥15 очков):\n"
+    text = "🏆 Топ-10:\n"
     for i, (user, pts) in enumerate(filtered[:10], start=1):
         text += f"{i}. {user}: {pts} очков\n"
     await update.effective_chat.send_message(text)
