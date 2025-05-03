@@ -10,7 +10,7 @@ from telegram.ext import CallbackContext, ContextTypes
 logger = logging.getLogger(__name__)
 
 class TournamentManager:
-    FIRST_POINTS  = 50
+    FIRST_POINTS  = 0
     SECOND_POINTS = 25
     THIRD_POINTS  = 15
     READY_TIMEOUT = 60  # секунды на готовность
@@ -48,7 +48,7 @@ class TournamentManager:
         else:
             cur.execute("INSERT INTO scores(username,points) VALUES(?,?)", (username, pts))
         self.conn.commit()
-        logger.info(f"Добавлено {pts} очков игроку {username}. Всего: {new}")
+        logger.info(f"Добавлено {pts} очков игроку @{username}. Всего: {new}")
 
     def get_points(self, username: str) -> int:
         cur = self.conn.cursor()
@@ -354,7 +354,7 @@ class TournamentManager:
             self._add_points(thirds[0], self.THIRD_POINTS)
             self._add_points(thirds[1], self.THIRD_POINTS)
 
-        text = f"🏆 Победитель: {self._format_username(champ)} (+{self.FIRST_POINTS} очков)\n"
+        text = f"🏆 Победитель: {self._format_username(champ)}\n"
         if runner:
             text += f"🥈 Второе место: {self._format_username(runner)} (+{self.SECOND_POINTS} очков)\n"
         if len(thirds) >= 2:
