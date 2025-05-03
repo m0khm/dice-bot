@@ -46,7 +46,6 @@ COMMANDS_TEXT = (
     "/id           — 🆔 Показать ID чата\n"
 )
 
-# ─── Helpers ────────────
 async def remove_webhook(app):
     await app.bot.delete_webhook(drop_pending_updates=True)
     logger.info("Webhook deleted.")
@@ -68,7 +67,7 @@ async def set_commands(app):
 def is_allowed_chat(chat_id: int) -> bool:
     return chat_id in ALLOWED_CHATS
 
-# ─── Обработчики ────────────
+# ─── Handlers ────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
@@ -111,7 +110,6 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         byes, pairs_list, first_msg, kb = tournament.start_tournament(chat.id)
     except ValueError as e:
         return await update.message.reply_text(str(e))
-
     for bye in byes:
         await context.bot.send_message(chat.id, f"🎉 {bye} получает bye")
     m = await context.bot.send_message(chat.id, "Сетки:\n" + pairs_list)
@@ -153,7 +151,6 @@ async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(aid, text)
     await q.edit_message_text(f"✅ Вы успешно обменяли {taken} очков")
 
-# ─── Новые команды ────────────
 async def points_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uname = update.effective_user.username or update.effective_user.full_name
     pts = tournament.get_points(uname)
@@ -168,11 +165,9 @@ async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}. {user}: {pts} очков\n"
     await update.effective_chat.send_message(text)
 
-# ─── Обработчик ошибок ────────────
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Exception while handling update:", exc_info=context.error)
 
-# ──────────── main ────────────
 def main():
     app = (
         ApplicationBuilder()
@@ -191,19 +186,18 @@ def main():
         owner_ids=OWNER_IDS
     )
 
-    # Регистрация хендлеров
-    app.add_handler(CommandHandler("start",      start))
-    app.add_handler(CommandHandler("help",       help_command))
-    app.add_handler(CommandHandler("id",         show_id))
-    app.add_handler(CommandHandler("game",       game))
+    app.add_handler(CommandHandler("start",       start))
+    app.add_handler(CommandHandler("help",        help_command))
+    app.add_handler(CommandHandler("id",          show_id))
+    app.add_handler(CommandHandler("game",        game))
     app.add_handler(CallbackQueryHandler(join_game_cb, pattern="^join_game$"))
-    app.add_handler(CommandHandler("game_start", game_start))
-    app.add_handler(CallbackQueryHandler(ready_cb,   pattern="^ready_"))
-    app.add_handler(CommandHandler("dice",       dice))
-    app.add_handler(CommandHandler("exchange",   exchange))
+    app.add_handler(CommandHandler("game_start",  game_start))
+    app.add_handler(CallbackQueryHandler(ready_cb,    pattern="^ready_"))
+    app.add_handler(CommandHandler("dice",        dice))
+    app.add_handler(CommandHandler("exchange",    exchange))
     app.add_handler(CallbackQueryHandler(exchange_cb, pattern="^exchange$"))
-    app.add_handler(CommandHandler("points",     points_cmd))
-    app.add_handler(CommandHandler("leaderboard",leaderboard_cmd))
+    app.add_handler(CommandHandler("points",      points_cmd))
+    app.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
 
     logger.info("Bot started")
     app.run_polling()
