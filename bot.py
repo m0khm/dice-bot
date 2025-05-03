@@ -22,35 +22,42 @@ logger = logging.getLogger(__name__)
 
 # ──────────── Конфиг ────────────
 load_dotenv()
-TOKEN        = os.getenv("BOT_TOKEN")
+TOKEN         = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not set in .env")
+
 ALLOWED_CHATS = {
     int(x) for x in os.getenv("ALLOWED_CHATS", "").split(",") if x.strip()
 }
-OWNER_IDS    = [int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()]
-DB_PATH      = os.getenv("DB_PATH", "scores.db")
+OWNER_IDS     = [int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()]
+DB_PATH       = os.getenv("DB_PATH", "scores.db")
+
+# Пороговые значения обмена, в порядке убывания
+EXCHANGE_THRESHOLDS = [100, 50, 25, 15]
 
 COMMANDS_TEXT = (
     "Привет! Я бот-рандомайзер. Доступные команды:\n"
     "/start        — 🤖 Список команд\n"
+    "/help         — 🤖 Список команд\n"
     "/game         — 👤 Начать сбор участников (админ)\n"
     "/game_start   — 🎮 Запустить турнир (админ)\n"
     "/dice         — 🎲 Бросок кубика во время хода\n"
-    "/exchange     — 💱 Обменять очки\n"
+    "/exchange     — 💱 Обменять очки (только пороговые суммы)\n"
     "/points       — 📊 Мои очки\n"
     "/leaderboard  — 🏆 Рейтинг топ-10\n"
     "/id           — 🆔 Показать ID чата\n"
 )
 
+# ─── Удаление старого вебхука ────────────────────────────
 async def remove_webhook(app):
     await app.bot.delete_webhook(drop_pending_updates=True)
     logger.info("Webhook deleted.")
 
+# ─── Установка команд в интерфейсе бота ───────────────────
 async def set_commands(app):
     await app.bot.set_my_commands([
         BotCommand("start",       "Список команд"),
-        BotCommand("help",        "Помощь"),
+        BotCommand("help",        "Список команд"),
         BotCommand("game",        "Начать сбор (админ)"),
         BotCommand("game_start",  "Запустить турнир (админ)"),
         BotCommand("dice",        "Бросок кубика"),
@@ -64,7 +71,7 @@ async def set_commands(app):
 def is_allowed_chat(chat_id: int) -> bool:
     return chat_id in ALLOWED_CHATS
 
-# ─── Handlers ────────────
+# ─── Обработчики команд ──────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
@@ -124,34 +131,56 @@ async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text:
         await update.message.reply_text(text)
 
+# ─── Обмен очков: выводим только максимально возможный порог ─────
 async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type != "private":
         return
     uname = update.effective_user.username or update.effective_user.full_name
     pts = tournament.get_points(uname)
-    if pts <= 0:
-        return await update.message.reply_text("У вас нет очков для обмена.")
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("Обменять", callback_data="exchange")]])
-    await update.message.reply_text(f"У вас {pts} очков", reply_markup=kb)
+
+    possible = [t for t in EXCHANGE_THRESHOLDS if pts >= t]
+    if not possible:
+        return await update.message.reply_text(
+            f"❌ У вас {pts} очков. Минимальный порог для обмена — {EXCHANGE_THRESHOLDS[-1]}."
+        )
+    amount = max(possible)
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"Обменять {amount}", callback_data=f"exchange_{amount}")
+    ]])
+    await update.message.reply_text(
+        f"У вас {pts} очков. Вы можете обменять {amount}.",
+        reply_markup=kb
+    )
 
 async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     uname = q.from_user.username or q.from_user.full_name
     pts = tournament.get_points(uname)
-    if pts <= 0:
-        return await q.edit_message_text("У вас нет очков.")
-    taken = tournament.exchange_points(uname)
+
+    try:
+        amount = int(q.data.split("_", 1)[1])
+    except (IndexError, ValueError):
+        return await q.edit_message_text("❌ Ошибка при разборе суммы обмена.")
+
+    if pts < amount:
+        return await q.edit_message_text(
+            f"❌ У вас уже не хватает очков ({pts} < {amount})."
+        )
+
+    taken = tournament.exchange_points_amount(uname, amount)
     for aid in OWNER_IDS:
-        await context.bot.send_message(aid, f"💱 @{uname} обменял {taken} очков")
+        await context.bot.send_message(aid, f"💱 {uname} обменял {taken} очков")
     await q.edit_message_text(f"✅ Вы успешно обменяли {taken} очков")
 
+# ─── Мои очки ─────────────────────────────────────────────
 async def points_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uname = update.effective_user.username or update.effective_user.full_name
     pts = tournament.get_points(uname)
     await update.effective_chat.send_message(f"📊 {uname}, у вас {pts} очков.")
 
+# ─── Рейтинг топ-10 ──────────────────────────────────────
 async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     top = tournament.get_leaderboard(10)
     if not top:
@@ -161,9 +190,11 @@ async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}. {user}: {pts} очков\n"
     await update.effective_chat.send_message(text)
 
+# ─── Обработчик ошибок ───────────────────────────────────
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Exception while handling update:", exc_info=context.error)
 
+# ──────────── Точка входа ─────────────────────────────────
 def main():
     app = (
         ApplicationBuilder()
@@ -182,6 +213,7 @@ def main():
         owner_ids=OWNER_IDS
     )
 
+    # Регистрация хендлеров
     app.add_handler(CommandHandler("start",       start))
     app.add_handler(CommandHandler("help",        help_command))
     app.add_handler(CommandHandler("id",          show_id))
@@ -191,15 +223,12 @@ def main():
     app.add_handler(CallbackQueryHandler(ready_cb,    pattern="^ready_"))
     app.add_handler(CommandHandler("dice",        dice))
     app.add_handler(CommandHandler("exchange",    exchange))
-    app.add_handler(CallbackQueryHandler(exchange_cb, pattern="^exchange$"))
+    app.add_handler(CallbackQueryHandler(exchange_cb, pattern="^exchange_\\d+$"))
     app.add_handler(CommandHandler("points",      points_cmd))
     app.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
 
     logger.info("Bot started")
     app.run_polling()
-    from datetime import timedelta
-    app.job_queue.run_once(lambda ctx: logger.info("JOBQUEUE WORKS!"), when=10)
-
 
 if __name__ == "__main__":
     main()
