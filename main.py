@@ -3,12 +3,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from telegram import (
-    BotCommand,
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import BotCommand, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -30,6 +25,7 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not set in .env")
+
 ALLOWED_CHATS = {
     int(x) for x in os.getenv("ALLOWED_CHATS", "").split(",") if x.strip()
 }
@@ -38,7 +34,6 @@ OWNER_IDS = [
 ]
 DB_PATH = os.getenv("DB_PATH", "scores.db")
 
-# Список команд для /start и /help
 COMMANDS_TEXT = (
     "Привет! Я бот-рандомайзер. Доступные команды:\n"
     "/start       — 🤖 Список команд\n"
@@ -49,7 +44,7 @@ COMMANDS_TEXT = (
     "/id          — 🆔 Показать ID чата\n"
 )
 
-# ─── Убираем старый вебхук и регистрируем подсказки /
+# ─── Helpers ────────────
 async def remove_webhook(app):
     await app.bot.delete_webhook(drop_pending_updates=True)
     logger.info("Webhook deleted.")
@@ -66,7 +61,10 @@ async def set_commands(app):
     ])
     logger.info("Bot commands set.")
 
-# ─── Handlers ────────────
+def is_allowed_chat(chat_id: int) -> bool:
+    return chat_id in ALLOWED_CHATS
+
+# ─── Обработчики команд ────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
@@ -76,9 +74,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
     await update.effective_chat.send_message(f"Chat ID: `{cid}`", parse_mode="Markdown")
-
-def is_allowed_chat(chat_id: int) -> bool:
-    return chat_id in ALLOWED_CHATS
 
 async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -120,9 +115,6 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat.id, first_msg, reply_markup=kb)
 
 async def ready_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cid = update.callback_query.message.chat.id
-    if not is_allowed_chat(cid):
-        return
     await tournament.confirm_ready(update, context)
 
 async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,7 +125,6 @@ async def dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text:
         await update.message.reply_text(text)
 
-# — обмен очков в личке —
 async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type != "private":
@@ -149,8 +140,7 @@ async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    user = q.from_user
-    uname = user.username or user.full_name
+    uname = q.from_user.username or q.from_user.full_name
     pts = tournament.get_points(uname)
     if pts <= 0:
         return await q.edit_message_text("У вас нет очков.")
@@ -159,6 +149,13 @@ async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for aid in OWNER_IDS:
         await context.bot.send_message(aid, text)
     await q.edit_message_text(f"✅ Вы успешно обменяли {taken} очков")
+
+# ─── Обработчик ошибок ────────────
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error("Exception while handling update:", exc_info=context.error)
+    # При желании можно уведомить админа или пользователя:
+    # if update and isinstance(update, Update) and update.effective_chat:
+    #     await update.effective_chat.send_message("❌ Произошла ошибка, мы уже работаем над исправлением.")
 
 # ──────────── main ────────────
 def main():
@@ -169,6 +166,8 @@ def main():
         .post_init(set_commands)
         .build()
     )
+    app.add_error_handler(error_handler)
+
     global tournament
     tournament = TournamentManager(
         job_queue=app.job_queue,
