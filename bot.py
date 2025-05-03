@@ -36,12 +36,14 @@ DB_PATH = os.getenv("DB_PATH", "scores.db")
 
 COMMANDS_TEXT = (
     "Привет! Я бот-рандомайзер. Доступные команды:\n"
-    "/start       — 🤖 Список команд\n"
-    "/game        — 👤 Начать сбор участников (админ)\n"
-    "/game_start  — 🎮 Запустить турнир (админ)\n"
-    "/dice        — 🎲 Бросок кубика во время хода\n"
-    "/exchange    — 💱 Обменять очки (в личке)\n"
-    "/id          — 🆔 Показать ID чата\n"
+    "/start        — 🤖 Список команд\n"
+    "/game         — 👤 Начать сбор участников (админ)\n"
+    "/game_start   — 🎮 Запустить турнир (админ)\n"
+    "/dice         — 🎲 Бросок кубика во время хода\n"
+    "/exchange     — 💱 Обменять очки (в личке)\n"
+    "/points       — 📊 Мои очки\n"
+    "/leaderboard  — 🏆 Рейтинг топ-10\n"
+    "/id           — 🆔 Показать ID чата\n"
 )
 
 # ─── Helpers ────────────
@@ -51,20 +53,22 @@ async def remove_webhook(app):
 
 async def set_commands(app):
     await app.bot.set_my_commands([
-        BotCommand("start",     "Список команд"),
-        BotCommand("help",      "Помощь"),
-        BotCommand("game",      "Начать сбор (админ)"),
-        BotCommand("game_start","Запустить турнир (админ)"),
-        BotCommand("dice",      "Бросить кубик"),
-        BotCommand("exchange",  "Обменять очки"),
-        BotCommand("id",        "Показать ID чата"),
+        BotCommand("start",       "Список команд"),
+        BotCommand("help",        "Помощь"),
+        BotCommand("game",        "Начать сбор (админ)"),
+        BotCommand("game_start",  "Запустить турнир (админ)"),
+        BotCommand("dice",        "Бросить кубик"),
+        BotCommand("exchange",    "Обменять очки"),
+        BotCommand("points",      "Мои очки"),
+        BotCommand("leaderboard", "Рейтинг топ-10"),
+        BotCommand("id",          "Показать ID чата"),
     ])
     logger.info("Bot commands set.")
 
 def is_allowed_chat(chat_id: int) -> bool:
     return chat_id in ALLOWED_CHATS
 
-# ─── Обработчики команд ────────────
+# ─── Обработчики ────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
@@ -129,8 +133,7 @@ async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type != "private":
         return
-    user = update.effective_user
-    uname = user.username or user.full_name
+    uname = update.effective_user.username or update.effective_user.full_name
     pts = tournament.get_points(uname)
     if pts <= 0:
         return await update.message.reply_text("У вас нет очков для обмена.")
@@ -150,12 +153,24 @@ async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(aid, text)
     await q.edit_message_text(f"✅ Вы успешно обменяли {taken} очков")
 
+# ─── Новые команды ────────────
+async def points_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uname = update.effective_user.username or update.effective_user.full_name
+    pts = tournament.get_points(uname)
+    await update.effective_chat.send_message(f"📊 {uname}, у вас {pts} очков.")
+
+async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    top = tournament.get_leaderboard(10)
+    if not top:
+        return await update.effective_chat.send_message("Рейтинг пуст.")
+    text = "🏆 Топ-10 игроков:\n"
+    for i, (user, pts) in enumerate(top, start=1):
+        text += f"{i}. {user}: {pts} очков\n"
+    await update.effective_chat.send_message(text)
+
 # ─── Обработчик ошибок ────────────
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Exception while handling update:", exc_info=context.error)
-    # При желании можно уведомить админа или пользователя:
-    # if update and isinstance(update, Update) and update.effective_chat:
-    #     await update.effective_chat.send_message("❌ Произошла ошибка, мы уже работаем над исправлением.")
 
 # ──────────── main ────────────
 def main():
@@ -187,6 +202,8 @@ def main():
     app.add_handler(CommandHandler("dice",       dice))
     app.add_handler(CommandHandler("exchange",   exchange))
     app.add_handler(CallbackQueryHandler(exchange_cb, pattern="^exchange$"))
+    app.add_handler(CommandHandler("points",     points_cmd))
+    app.add_handler(CommandHandler("leaderboard",leaderboard_cmd))
 
     logger.info("Bot started")
     app.run_polling()
