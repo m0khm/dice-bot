@@ -154,9 +154,7 @@ async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pts = tournament.get_points(uname)
     if pts <= 0:
         return await q.edit_message_text("У вас нет очков.")
-    # снимаем очки
     taken = tournament.exchange_points(uname)
-    # уведомляем админов
     text = f"💱 {uname} обменял {taken} очков"
     for aid in OWNER_IDS:
         await context.bot.send_message(aid, text)
