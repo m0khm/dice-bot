@@ -1,84 +1,37 @@
 # game.py
-import sqlite3
 import random
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from telegram.ext import CallbackContext, ContextTypes
 
 class TournamentManager:
-    FIRST_POINTS = 50
-    SECOND_POINTS = 25
-    THIRD_POINTS = 15
-
-    def __init__(
-        self,
-        job_queue,
-        allowed_chats=None,
-        db_path: str = "scores.db",
-        owner_ids=None
-    ):
+    def __init__(self, job_queue):
         self.job_queue = job_queue
-        self.allowed_chats = set(allowed_chats or [])
-        self.owner_ids    = list(owner_ids or [])
         self.chats = {}
-
-        # Инициализируем SQLite
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._init_db()
-
-    def _init_db(self):
-        cur = self.conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS scores (
-                username TEXT PRIMARY KEY,
-                points   INTEGER NOT NULL
-            )
-        """)
-        self.conn.commit()
 
     def _format_username(self, name: str) -> str:
         if not name:
             return ""
         return name if name.startswith("@") else f"@{name}"
 
-    # ─── работа с очками ─────────
-    def _add_points(self, username: str, pts: int):
-        cur = self.conn.cursor()
-        cur.execute("SELECT points FROM scores WHERE username=?", (username,))
-        row = cur.fetchone()
-        if row:
-            new = row[0] + pts
-            cur.execute("UPDATE scores SET points=? WHERE username=?", (new, username))
-        else:
-            new = pts
-            cur.execute("INSERT INTO scores(username,points) VALUES(?,?)", (username, pts))
-        self.conn.commit()
-
-    def get_points(self, username: str) -> int:
-        cur = self.conn.cursor()
-        cur.execute("SELECT points FROM scores WHERE username=?", (username,))
-        row = cur.fetchone()
-        return row[0] if row else 0
-
-    def exchange_points(self, username: str) -> int:
-        pts = self.get_points(username)
-        if pts > 0:
-            cur = self.conn.cursor()
-            cur.execute("UPDATE scores SET points=0 WHERE username=?", (username,))
-            self.conn.commit()
-        return pts
-
     # ───────── signup ─────────
-    def begin_signup(self, chat_id: int):
+    def begin_signup(self, chat_id: int) -> None:
         self.chats[chat_id] = {
-            "players": [], "stage": "signup",
-            "next_round": [], "pairs": [],
-            "current_pair_idx": 0, "round_pairs_count": 0,
-            "ready": {}, "first_ready_time": {},
-            "ready_jobs": {}, "round_wins": {},
-            "round_rolls": {}, "turn_order": {},
-            "semifinal_losers": [], "pair_timers": {},
-            "dice_jobs": {},            # таймеры ожидания броска
+            "players": [],
+            "stage": "signup",
+            "next_round": [],
+            "pairs": [],
+            "current_pair_idx": 0,
+            "round_pairs_count": 0,
+            "ready": {},
+            "first_ready_time": {},
+            "ready_jobs": {},
+            "round_wins": {},
+            "round_rolls": {},
+            "turn_order": {},
+            "semifinal_losers": [],
+            "pair_timers": {},
+            "dice_jobs": {},          # таймеры ожидания /dice
             "finished_pairs": set(),
         }
 
@@ -105,37 +58,45 @@ class TournamentManager:
         random.shuffle(players)
         data["next_round"] = []
 
+        # bye, если нечётное число
         byes = []
         if len(players) % 2 == 1:
             bye = players.pop(random.randrange(len(players)))
             byes.append(bye)
             data["next_round"].append(bye)
 
+        # пары
         pairs = [(players[i], players[i+1]) for i in range(0, len(players), 2)]
         data.update({
             "stage": "round",
             "pairs": pairs,
             "current_pair_idx": 0,
             "round_pairs_count": len(pairs),
-            "ready": {}, "first_ready_time": {},
-            "ready_jobs": {}, "round_wins": {},
-            "round_rolls": {}, "turn_order": {},
+            "ready": {},
+            "first_ready_time": {},
+            "ready_jobs": {},
+            "round_wins": {},
+            "round_rolls": {},
+            "turn_order": {},
             "finished_pairs": set(),
+            # dice_jobs осталось, не затираем
         })
 
+        # сформировать текст сетки
         pairs_list = "\n".join(
             f"Пара {i+1}: {self._format_username(a)} vs {self._format_username(b)}"
-            for i, (a, b) in enumerate(pairs)
+            for i, (a,b) in enumerate(pairs)
         )
 
-        first_pair = pairs[0]
+        # первая пара
+        a, b = pairs[0]
         first_msg = (
-            f"Пара 1: {self._format_username(first_pair[0])} vs "
-            f"{self._format_username(first_pair[1])}\nНажмите «Готов?»"
+            f"Пара 1: {self._format_username(a)} vs {self._format_username(b)}\n"
+            "Нажмите «Готов?»"
         )
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("Готов?", callback_data="ready_0")]])
 
-        # общая неактивность пары 120 с
+        # общий таймер неактивности пары: 120 сек
         if self.job_queue:
             job = self.job_queue.run_once(
                 self._pair_timeout,
@@ -148,27 +109,30 @@ class TournamentManager:
 
         return byes, pairs_list, first_msg, kb
 
-    # ───────── кнопка «Готов?» ─────────
+    # ───────── готовность ─────────
     async def confirm_ready(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         q = update.callback_query
         await q.answer()
 
         chat_id = q.message.chat.id
         idx = int(q.data.split("_")[1])
-        name = q.from_user.username or q.from_user.full_name
+        user = q.from_user
+        name = user.username or user.full_name
         data = self.chats[chat_id]
         pair = data["pairs"][idx]
 
+        # проверяем игрока
         if name not in pair:
             return await q.answer("❌ Вы не в этой паре.", show_alert=True)
 
-        lst = data["ready"].setdefault(idx, [])
-        if name in lst:
+        ready_list = data["ready"].setdefault(idx, [])
+        if name in ready_list:
             return
-        lst.append(name)
+        ready_list.append(name)
         now = time.time()
 
-        if len(lst) == 1:
+        # первый готов
+        if len(ready_list) == 1:
             data["first_ready_time"][idx] = now
             if self.job_queue:
                 job = self.job_queue.run_once(
@@ -181,25 +145,28 @@ class TournamentManager:
                 data["ready_jobs"][idx] = job
             await context.bot.send_message(
                 chat_id,
-                f"✅ {self._format_username(name)} готов! Ждём второго…"
+                f"✅ {self._format_username(name)} готов! Ждём второго до 60 с."
             )
-            # сброс общего таймера пары на 60 с
+            # сброс основного таймера пары
             if self.job_queue:
                 self._reset_pair_timer(chat_id, idx, 60)
 
+        # второй готов
         else:
-            first_ts = data["first_ready_time"].get(idx, 0)
-            if now - first_ts <= 60:
-                # оба готовы — отменяем таймер ожидания второго готова
-                job = data["ready_jobs"].pop(idx, None)
-                if job:
-                    job.schedule_removal()
-                a, b = pair
-                data["round_wins"][idx] = {a: 0, b: 0}
+            ts0 = data["first_ready_time"].get(idx, 0)
+            if now - ts0 <= 60:
+                # отменяем таймер ожидания второго
+                job0 = data["ready_jobs"].pop(idx, None)
+                if job0:
+                    job0.schedule_removal()
+                a,b = pair
+                data["round_wins"][idx] = {a:0, b:0}
                 first, second = random.sample(pair, 2)
                 data["turn_order"][idx] = (first, second)
-                msg = f"🎲 Оба готовы! {self._format_username(first)} ходит первым. Используйте /dice"
-                await context.bot.send_message(chat_id, msg)
+                await context.bot.send_message(
+                    chat_id,
+                    f"🎲 Оба готовы! {self._format_username(first)} ходит первым. Используйте /dice"
+                )
                 # планируем таймаут первого броска
                 if self.job_queue:
                     dj = self.job_queue.run_once(
@@ -225,7 +192,7 @@ class TournamentManager:
 
         if len(confirmed) == 1:
             winner = confirmed[0]
-            loser = pair[0] if pair[1] == winner else pair[1]
+            loser = pair[0] if pair[1]==winner else pair[1]
             data["next_round"].append(winner)
             data["finished_pairs"].add(idx)
             await context.bot.send_message(
@@ -233,10 +200,11 @@ class TournamentManager:
                 f"⏰ Время вышло! ✅ {self._format_username(winner)} проходит дальше."
             )
         else:
-            a, b = pair
+            a,b = pair
             await context.bot.send_message(
                 chat_id,
-                f"⏰ Никто не подтвердил — оба выбывают: {self._format_username(a)}, {self._format_username(b)}."
+                f"⏰ Никто не подтвердил — оба выбывают: "
+                f"{self._format_username(a)}, {self._format_username(b)}."
             )
         await self._proceed_next(chat_id, context.bot)
 
@@ -262,20 +230,18 @@ class TournamentManager:
         chat_id = job.chat_id
         idx = job.data["idx"]
         data = self.chats[chat_id]
-
         if idx in data["finished_pairs"]:
             return
 
         pair = data["pairs"][idx]
         confirmed = data["ready"].get(idx, [])
         if not confirmed:
-            a, b = pair
+            a,b = pair
             await context.bot.send_message(
                 chat_id,
                 f"⏰ Пара {self._format_username(a)} vs {self._format_username(b)} не подтвердила готовность — оба выбывают."
             )
             data["finished_pairs"].add(idx)
-
         await self._proceed_next(chat_id, context.bot)
 
     # ───────── таймаут броска ─────────
@@ -285,21 +251,21 @@ class TournamentManager:
         idx = job.data["idx"]
         expected = job.data["expected"]
         data = self.chats.get(chat_id)
-        if not data or data["stage"] != "round":
+        if not data or data["stage"]!="round":
             return
 
         rolls = data["round_rolls"].get(idx, {})
-        a, b = data["pairs"][idx]
+        a,b = data["pairs"][idx]
         if expected not in rolls:
-            # неактивный выбыл
-            winner = a if expected == b else b
+            # дисквалификация неактивного
+            winner = b if expected==a else a
             data["next_round"].append(winner)
             data["finished_pairs"].add(idx)
             await context.bot.send_message(
                 chat_id,
-                f"⏰ {self._format_username(expected)} не бросил вовремя — {self._format_username(winner)} проходит дальше."
+                f"⏰ {self._format_username(expected)} не бросил — {self._format_username(winner)} проходит дальше."
             )
-            # отменяем оба таймера этой пары
+            # снимаем оба таймера пары
             dj = data["dice_jobs"].pop(idx, None)
             if dj: dj.schedule_removal()
             pt = data["pair_timers"].pop(idx, None)
@@ -313,8 +279,9 @@ class TournamentManager:
         idx = data["current_pair_idx"]
         pairs = data["pairs"]
 
+        # ещё пары
         if idx < len(pairs):
-            a, b = pairs[idx]
+            a,b = pairs[idx]
             kb = InlineKeyboardMarkup([[InlineKeyboardButton("Готов?", callback_data=f"ready_{idx}")]])
             await bot.send_message(
                 chat_id,
@@ -323,22 +290,47 @@ class TournamentManager:
             )
             return
 
+        # финал и дальше оригинальная логика...
         winners = data["next_round"]
         if not winners:
-            await bot.send_message(chat_id, "⚠️ Никто не активен — турнир завершён.")
+            await bot.send_message(chat_id, "⚠️ Никто активен — турнир без результата.")
             self.chats.pop(chat_id, None)
             return
 
-        # начисляем очки
-        self._add_points(winners[0], self.FIRST_POINTS)
-        if len(winners) > 1:
-            self._add_points(winners[1], self.SECOND_POINTS)
-        for t in data["semifinal_losers"][:2]:
-            self._add_points(t, self.THIRD_POINTS)
+        # полуфинальные лузеры
+        if data["round_pairs_count"] == 2:
+            for i,(x,y) in enumerate(data["pairs"]):
+                w = data["round_wins"].get(i,{})
+                if w.get(x,0)!=w.get(y,0):
+                    loser = x if w[x]<w[y] else y
+                    data["semifinal_losers"].append(loser)
 
-        # объявляем финал и призёров...
-        # (оставьте существующую логику вывода итогов)
-        data["stage"] = "finished"
+        # новый раунд
+        if len(winners)>1:
+            data["players"] = winners.copy()
+            byes,p_list,fmsg,kb = self.start_tournament(chat_id)
+            m: Message = await bot.send_message(chat_id, "Новая сетка:\n"+p_list)
+            await bot.pin_chat_message(chat_id, m.message_id)
+            for bye in byes:
+                await bot.send_message(chat_id, f"🎉 {bye} получает bye.")
+            await bot.send_message(chat_id, fmsg, reply_markup=kb)
+            return
+
+        # финал
+        champ = winners[0]
+        runner=None
+        wdict = data["round_wins"].get(0,{})
+        if wdict:
+            p,q = data["pairs"][0]
+            runner = p if wdict.get(p,0)<wdict.get(q,0) else q
+        thirds = data["semifinal_losers"]
+        text = f"🏆 Победитель: {self._format_username(champ)}\n"
+        if runner:
+            text+=f"🥈 Второе: {self._format_username(runner)}\n"
+        if len(thirds)>=2:
+            text+=f"🥉 Третьи: {thirds[0]}, {thirds[1]}\n"
+        await bot.send_message(chat_id, text)
+        data["stage"]="finished"
 
     # ───────── бросок кубика ─────────
     async def roll_dice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -350,29 +342,30 @@ class TournamentManager:
             return "❗ Турнир ещё не идёт."
 
         idx = data["current_pair_idx"]
-        # отменяем таймер ожидания броска
-        job = data["dice_jobs"].pop(idx, None)
-        if job:
-            job.schedule_removal()
+        # отменяем таймаут броска
+        dice_job = data["dice_jobs"].pop(idx, None)
+        if dice_job:
+            dice_job.schedule_removal()
 
-        a, b = data["pairs"][idx]
-        if name not in (a, b):
+        a,b = data["pairs"][idx]
+        if name not in (a,b):
             return "❌ Вы не участвуете в этой паре."
 
-        wins = data["round_wins"].setdefault(idx, {a: 0, b: 0})
-        rolls = data["round_rolls"].setdefault(idx, {})
-        first, second = data["turn_order"].get(idx, (a, b))
+        wins = data["round_wins"].setdefault(idx, {a:0,b:0})
+        rolls = data["round_rolls"].setdefault(idx,{})
+        first,second = data["turn_order"].get(idx,(a,b))
 
-        turn = first if not rolls else second if len(rolls) == 1 else None
+        turn = first if not rolls else second if len(rolls)==1 else None
         if name != turn:
             return "❌ Сейчас не ваш ход."
 
-        val = random.randint(1, 6)
+        val = random.randint(1,6)
         rolls[name] = val
         await update.effective_chat.send_message(f"{self._format_username(name)} бросил 🎲 {val}.")
 
-        if len(rolls) < 2:
-            nxt = second if name == first else first
+        # если второй ещё не ходил
+        if len(rolls)<2:
+            nxt = second if name==first else first
             # планируем таймаут второго броска
             if self.job_queue:
                 dj = self.job_queue.run_once(
@@ -384,7 +377,26 @@ class TournamentManager:
                 )
                 data["dice_jobs"][idx] = dj
             return f"Ход {self._format_username(nxt)}."
+
+        # оба бросили
+        r1,r2 = rolls[a], rolls[b]
+        if r1==r2:
+            data["round_rolls"][idx] = {}
+            return f"Ничья {r1}–{r2}! Переброс, {first} снова первым."
+
+        winner = a if r1>r2 else b
+        wins[winner] += 1
+        data["round_rolls"][idx] = {}
+
+        if wins[winner] >= 2:
+            await update.effective_chat.send_message(f"🎉 Победитель пары: {winner}")
+            data["next_round"].append(winner)
+            data["finished_pairs"].add(idx)
+            # отменяем таймер пары
+            jt = data["pair_timers"].pop(idx, None)
+            if jt: jt.schedule_removal()
+            await self._proceed_next(chat_id, context.bot)
+            return ""
         else:
-            # ваше существующее сравнение и логика победы...
-            # отмена pair_timer и переход далее
-            pass
+            data["turn_order"][idx] = (first, second)
+            return f"Счёт {wins[a]}–{wins[b]}. {first} ходит первым."
