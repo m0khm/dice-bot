@@ -1,6 +1,6 @@
 # bot.py
 import logging
-import os
+import os 
 from dotenv import load_dotenv
 from telegram import BotCommand, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
