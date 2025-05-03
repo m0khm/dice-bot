@@ -17,8 +17,8 @@ class TournamentManager:
     def __init__(self, job_queue, allowed_chats=None, db_path: str = "scores.db", owner_ids=None):
         self.job_queue = job_queue
         self.allowed_chats = set(allowed_chats or [])
-        self.owner_ids = list(owner_ids or [])
-        self.chats = {}
+        self.owner_ids    = list(owner_ids or [])
+        self.chats        = {}
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self._init_db()
 
