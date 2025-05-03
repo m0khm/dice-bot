@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 # ──────────── Конфиг ────────────
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
+ALLOWED_CHATS = {int(x) for x in os.getenv("ALLOWED_CHATS","").split(",") if x}
+DB_PATH       = os.getenv("DB_PATH", "scores.db")
+OWNER_IDS     = [int(x) for x in os.getenv("OWNER_IDS","").split(",") if x]
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not set in .env")
 ALLOWED_CHATS = {
