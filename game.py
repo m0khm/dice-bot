@@ -63,6 +63,17 @@ class TournamentManager:
             cur.execute("UPDATE scores SET points=0 WHERE username=?", (username,))
             self.conn.commit()
         return pts
+        
+    def exchange_points_amount(self, username: str, amount: int) -> int:
+        # новый метод: списывает ровно amount
+        pts = self.get_points(username)
+        if pts < amount:
+            return 0
+        new = pts - amount
+        cur = self.conn.cursor()
+        cur.execute("UPDATE scores SET points=? WHERE username=?", (new, username))
+        self.conn.commit()
+        return amount  
 
     def get_leaderboard(self, limit: int = 10):
         cur = self.conn.cursor()
