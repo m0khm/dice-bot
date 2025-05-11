@@ -24,6 +24,12 @@ class TournamentManager:
         self._init_db()
         self.chats         = {}
 
+    # ─── ВСПОМОГАТЕЛЬНОЕ ───────────────────────────────────
+    @staticmethod                       # ← NEW
+    def _is_power_of_two(n: int) -> bool:  # ← NEW
+        """True, если n — степень двойки (2, 4, 8, 16…)."""  # ← NEW
+        return n >= 2 and (n & (n - 1) == 0)                 # ← NEW
+
     def _init_db(self):
         cur = self.conn.cursor()
         cur.execute("""
@@ -65,7 +71,6 @@ class TournamentManager:
         return pts
         
     def exchange_points_amount(self, username: str, amount: int) -> int:
-        # новый метод: списывает ровно amount
         pts = self.get_points(username)
         if pts < amount:
             return 0
@@ -114,11 +119,16 @@ class TournamentManager:
         players = data and data["players"][:]
         if not players or len(players) < 2:
             raise ValueError("Нужно как минимум 2 игрока.")
+        # --- проверяем степень двойки -------------------------------------  ← NEW
+        if not self._is_power_of_two(len(players)):                         # ← NEW
+            raise ValueError(                                               # ← NEW
+                "Количество игроков должно быть степенью двойки (2, 4, 8, 16 …)."
+            )                                                               # ← NEW
         random.shuffle(players)
         data["next_round"].clear()
 
         byes = []
-        if len(players) % 2 == 1:
+        if len(players) % 2 == 1:  # это условие уже не выполнится, но оставлено для совместимости
             bye = players.pop(random.randrange(len(players)))
             byes.append(bye)
             data["next_round"].append(bye)
