@@ -1,4 +1,3 @@
-# game.py  05-2025
 import sqlite3
 import random
 import time
@@ -74,6 +73,7 @@ class TournamentManager:
     def exchange_points_amount(self, username: str, amount: int) -> int:
         pts = self.get_points(username)
         if pts < amount:
+            logger.warning(f"Игрок @{username} пытался обменять {amount} очков, но у него только {pts}.")
             return 0
         new = pts - amount
         cur = self.conn.cursor()
@@ -102,7 +102,7 @@ class TournamentManager:
             "round_pairs_count": 0, "ready": {}, "first_ready_time": {},
             "pair_timers": {}, "roll_timers": {}, "round_wins": {},
             "round_rolls": {}, "turn_order": {}, "finished_pairs": set(),
-            "semifinal_losers": [],
+            "semifinal_losers": [], "ready_jobs": {},
         }
 
     def add_player(self, chat_id: int, user) -> bool:
@@ -148,7 +148,7 @@ class TournamentManager:
             "pair_timers": {}, "roll_timers": {},
             "round_wins": {}, "round_rolls": {},
             "turn_order": {}, "finished_pairs": set(),
-            "semifinal_losers": [],
+            "semifinal_losers": [], "ready_jobs": {},
         })
 
         # запускаем таймер готовности для первой пары
@@ -357,7 +357,16 @@ class TournamentManager:
 
         champ = winners[0]
         w = data["round_wins"].get(0, {})
-        runner = None
+        if w:
+            if w[0] == 1:
+                runner = 2
+            elif w[1] == 1:
+                runner = 1
+            else:
+                runner = None
+        else:
+            logger.warning("Не удалось определить второе место: отсутствуют данные о раунде.")
+            runner = None
         if w:
             p, q = data["pairs"][0]
             runner = p if w.get(p, 0) < w.get(q, 0) else q
@@ -399,7 +408,7 @@ class TournamentManager:
 
         val = random.randint(1, 6)
         rolls[name] = val
-        await update.effective_chat.send_message(f"{self._format_username(name)} бросил 🎲 {val}.")
+        await context.bot.send_message(chat_id, f"{self._format_username(name)} бросил 🎲 {val}.")
 
         if len(rolls) < 2:
             nxt = second if name == first else first
@@ -418,7 +427,7 @@ class TournamentManager:
             data["round_rolls"][idx] = {}
 
             if wins[winner] >= 2:
-                await update.effective_chat.send_message(
+                await context.bot.send_message(chat_id,
                     f"🎉 Победитель пары: {self._format_username(winner)}"
                 )
                 data["next_round"].append(winner)
