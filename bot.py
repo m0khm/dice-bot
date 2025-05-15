@@ -75,7 +75,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_chat.send_message(COMMANDS_TEXT)
+    caption = (
+        "<b>Привет, я бот-рандомайзер!</b>\n"
+        "С помощью меня вы сможете организовать розыгрыш или турнир прямо в чате.\n\n"
+        "<b>Используйте /start</b> для списка команд."
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton("👤 Dev", url="https://t.me/rapuzan"),
+            InlineKeyboardButton("⚡️ Community", url="https://t.me/nookiqqonton")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    try:
+        with open('noki_rapu.jpg', 'rb') as photo:
+            await update.effective_chat.send_photo(
+                photo=photo,
+                caption=caption,
+                parse_mode='HTML',
+                reply_markup=reply_markup
+            )
+    except FileNotFoundError:
+        await update.effective_chat.send_message(
+            text=caption,
+            parse_mode='HTML',
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
+        )
 
 async def show_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
