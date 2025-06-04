@@ -70,6 +70,20 @@ async def set_commands(app):
 def is_allowed_chat(chat_id: int) -> bool:
     return chat_id in ALLOWED_CHATS
 
+def resolve_chat_id(chat, args) -> int | None:
+    """Return target chat_id based on context args.
+    For private chats an explicit chat_id is required if multiple chats are allowed.
+    """
+    if chat.type != "private":
+        return chat.id
+    if args:
+        try:
+            cid = int(args[0])
+        except ValueError:
+            return None
+        return cid if is_allowed_chat(cid) else None
+    return next(iter(ALLOWED_CHATS)) if len(ALLOWED_CHATS) == 1 else None
+
 # ─── Обработчики команд ──────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(COMMANDS_TEXT)
@@ -161,8 +175,11 @@ async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type != "private":
         return
+    cid = resolve_chat_id(chat, context.args)
+    if cid is None:
+        return await update.message.reply_text("❗ Укажите ID чата для обмена.")
     uname = update.effective_user.username or update.effective_user.full_name
-    pts = tournament.get_points(uname)
+    pts = tournament.get_points(cid, uname)
 
     possible = [t for t in EXCHANGE_THRESHOLDS if pts >= t]
     if not possible:
@@ -171,7 +188,9 @@ async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     amount = max(possible)
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton(f"Обменять {amount}", callback_data=f"exchange_{amount}")
+        InlineKeyboardButton(
+            f"Обменять {amount}", callback_data=f"exchange_{cid}_{amount}"
+        )
     ]])
     await update.message.reply_text(
         f"У вас {pts} очков. Вы можете обменять {amount}.",
@@ -182,32 +201,37 @@ async def exchange_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     uname = q.from_user.username or q.from_user.full_name
-    pts = tournament.get_points(uname)
-
     try:
-        amount = int(q.data.split("_", 1)[1])
-    except (IndexError, ValueError):
+        cid, amount = map(int, q.data.split("_", 2)[1:])
+    except (ValueError, IndexError):
         return await q.edit_message_text("❌ Ошибка при разборе суммы обмена.")
+    pts = tournament.get_points(cid, uname)
 
     if pts < amount:
         return await q.edit_message_text(
             f"❌ У вас уже не хватает очков ({pts} < {amount})."
         )
 
-    taken = tournament.exchange_points_amount(uname, amount)
+    taken = tournament.exchange_points_amount(cid, uname, amount)
     for aid in OWNER_IDS:
         await context.bot.send_message(aid, f"💱 @{uname} обменял {taken} очков")
     await q.edit_message_text(f"✅ Вы успешно обменяли {taken} очков")
 
 # ─── Мои очки ─────────────────────────────────────────────
 async def points_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = resolve_chat_id(update.effective_chat, context.args)
+    if chat_id is None:
+        return await update.effective_chat.send_message("❗ Укажите ID чата.")
     uname = update.effective_user.username or update.effective_user.full_name
-    pts = tournament.get_points(uname)
+    pts = tournament.get_points(chat_id, uname)
     await update.effective_chat.send_message(f"📊 {uname}, у вас {pts} очков.")
 
 # ─── Рейтинг топ-10 ──────────────────────────────────────
 async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    top = tournament.get_leaderboard(10)
+    chat_id = resolve_chat_id(update.effective_chat, context.args)
+    if chat_id is None:
+        return await update.effective_chat.send_message("❗ Укажите ID чата.")
+    top = tournament.get_leaderboard(chat_id, 10)
     if not top:
         return await update.effective_chat.send_message("Рейтинг пуст.")
     text = "🏆 Топ-10 игроков:\n"
@@ -248,7 +272,7 @@ def main():
     app.add_handler(CallbackQueryHandler(ready_cb,    pattern="^ready_"))
     app.add_handler(CommandHandler("dice",        dice))
     app.add_handler(CommandHandler("exchange",    exchange))
-    app.add_handler(CallbackQueryHandler(exchange_cb, pattern="^exchange_\\d+$"))
+    app.add_handler(CallbackQueryHandler(exchange_cb, pattern="^exchange_\d+_\d+$"))
     app.add_handler(CommandHandler("points",      points_cmd))
     app.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
 
