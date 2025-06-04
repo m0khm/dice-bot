@@ -1,0 +1,60 @@
+# Virtual environments
+venv/
+ENV/
+.env/
+.venv/
+venv*/
+
+# Compiled Python files
+__pycache__/
+*.py[cod]
+*.so
+*.dll
+*.dylib
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# SQLite database files
+*.sqlite3
+*.sqlite
+*.db
+*.db-journal
+
+# Compiled C++ files
+*.out
+
+# MacOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
