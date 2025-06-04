@@ -34,8 +34,10 @@ class TournamentManager:
         cur = self.conn.cursor()
         cur.execute("""
             CREATE TABLE IF NOT EXISTS scores(
-                username TEXT PRIMARY KEY,
-                points   INTEGER NOT NULL
+                chat_id INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                points   INTEGER NOT NULL,
+                PRIMARY KEY(chat_id, username)
             )
         """)
         self.conn.commit()
@@ -44,51 +46,57 @@ class TournamentManager:
         return name if name.startswith("@") else f"@{name}"
 
     # ─── Работа с очками ───────────────────────────────────
-    def _add_points(self, username: str, pts: int):
+    def _add_points(self, chat_id: int, username: str, pts: int):
         cur = self.conn.cursor()
-        cur.execute("SELECT points FROM scores WHERE username=?", (username,))
+        cur.execute(
+            "SELECT points FROM scores WHERE chat_id=? AND username=?",
+            (chat_id, username),
+        )
         row = cur.fetchone()
         new = (row[0] + pts) if row else pts
         if row:
-            cur.execute("UPDATE scores SET points=? WHERE username=?", (new, username))
+            cur.execute(
+                "UPDATE scores SET points=? WHERE chat_id=? AND username=?",
+                (new, chat_id, username),
+            )
         else:
-            cur.execute("INSERT INTO scores(username,points) VALUES(?,?)", (username, pts))
+            cur.execute(
+                "INSERT INTO scores(chat_id, username, points) VALUES(?,?,?)",
+                (chat_id, username, pts),
+            )
         self.conn.commit()
         logger.info(f"Добавлено {pts} очков игроку @{username}. Всего: {new}")
 
-    def get_points(self, username: str) -> int:
+    def get_points(self, chat_id: int, username: str) -> int:
         cur = self.conn.cursor()
-        cur.execute("SELECT points FROM scores WHERE username=?", (username,))
+        cur.execute("SELECT points FROM scores WHERE chat_id=? AND username=?", (chat_id, username))
         row = cur.fetchone()
         return row[0] if row else 0
 
-    def exchange_points(self, username: str) -> int:
-        pts = self.get_points(username)
+    def exchange_points(self, chat_id: int, username: str) -> int:
+        pts = self.get_points(chat_id, username)
         if pts > 0:
             cur = self.conn.cursor()
-            cur.execute("UPDATE scores SET points=0 WHERE username=?", (username,))
+            cur.execute("UPDATE scores SET points=0 WHERE chat_id=? AND username=?", (chat_id, username))
             self.conn.commit()
         return pts
         
-    def exchange_points_amount(self, username: str, amount: int) -> int:
-        pts = self.get_points(username)
+    def exchange_points_amount(self, chat_id: int, username: str, amount: int) -> int:
+        pts = self.get_points(chat_id, username)
         if pts < amount:
             logger.warning(f"Игрок @{username} пытался обменять {amount} очков, но у него только {pts}.")
             return 0
         new = pts - amount
         cur = self.conn.cursor()
-        cur.execute("UPDATE scores SET points=? WHERE username=?", (new, username))
+        cur.execute("UPDATE scores SET points=? WHERE chat_id=? AND username=?", (new, chat_id, username))
         self.conn.commit()
         return amount  
-
-    def get_leaderboard(self, limit: int = 10):
         cur = self.conn.cursor()
-        cur.execute(
-            "SELECT username,points FROM scores ORDER BY points DESC, username LIMIT ?",
-            (limit,)
-        )
-        return cur.fetchall()
 
+    def get_leaderboard(self, chat_id: int, limit: int = 10):
+        cur = self.conn.cursor()
+        cur.execute("SELECT username,points FROM scores WHERE chat_id=? ORDER BY points DESC, username LIMIT ?", (chat_id, limit))
+        return cur.fetchall()
     # ─── Signup ────────────────────────────────────────────
     def begin_signup(self, chat_id: int):
         # --- защита от повторного /game_start --------------------------- ◀ NEW
